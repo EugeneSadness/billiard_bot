@@ -26,10 +26,8 @@ async def start_booking(message: Message, state: FSMContext):
 async def process_name(message: Message, state: FSMContext):
     await state.update_data(name=message.text)
     await state.set_state(BookingStates.SELECT_DATE)
-    available_dates = get_available_dates()  # Функция получения доступных дат
+    available_dates = get_available_dates()
     await message.answer(
         f"Приятно познакомиться, {message.text}!\nВыбери день:",
         reply_markup=get_date_keyboard(available_dates)
     )
-
-# Дополнительные обработчики для остальных состояний
