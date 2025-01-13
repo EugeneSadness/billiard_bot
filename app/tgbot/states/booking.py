@@ -1,12 +1,14 @@
 from aiogram.fsm.state import State, StatesGroup
 
 class BookingStates(StatesGroup):
-    MAIN_MENU = State()
-    ENTER_NAME = State()
-    SELECT_DATE = State()
-    SELECT_START_TIME = State()
-    SELECT_END_TIME = State()
-    ENTER_PHONE = State()
-    CANCEL_BOOKING_DATE = State()
-    CANCEL_BOOKING_TIME = State()
-    CANCEL_BOOKING_NAME = State()
+    waiting_for_action = State()
+    waiting_for_name = State()
+    waiting_for_date = State()
+    waiting_for_start_time = State()
+    waiting_for_end_time = State()
+    waiting_for_phone = State()
+    confirm_booking = State()
+    
+    # Для отмены брони
+    select_booking_to_cancel = State()
+    confirm_cancellation = State() 
