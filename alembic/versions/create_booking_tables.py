@@ -8,7 +8,7 @@ from typing import Sequence, Union
 from alembic import op
 
 revision: str = 'create_booking_tables'
-down_revision: Union[str, None] = 'b20e5643d3bd'
+down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -17,9 +17,17 @@ def upgrade() -> None:
     op.execute("""
         CREATE TABLE IF NOT EXISTS tables (
             id SERIAL PRIMARY KEY,
-            name VARCHAR(50) NOT NULL,
-            is_active BOOLEAN DEFAULT true
+            name VARCHAR(50) NOT NULL
         );
+    """)
+    
+    # Добавляем начальные данные
+    op.execute("""
+        INSERT INTO tables (name) VALUES
+        ('леопардовый'),
+        ('синий'),
+        ('зеленый'),
+        ('красный');
     """)
     
     # Создаем таблицу бронирований

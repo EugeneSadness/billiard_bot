@@ -2,6 +2,7 @@ import asyncio
 from logging.config import fileConfig
 
 from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
+from app.infrastructure.database.models.base import Base
 
 from alembic import context
 from config.config import settings
@@ -15,7 +16,7 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # Metadata object for autogenerate support (if needed, otherwise None)
-target_metadata = None
+target_metadata = Base.metadata
 
 # Database URL for SQLAlchemy
 url = f"postgresql+psycopg://{settings.postgres_user}:{settings.postgres_password}@{settings.postgres.host}:{settings.postgres.port}/{settings.postgres.name}"

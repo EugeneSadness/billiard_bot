@@ -6,28 +6,26 @@ from aiogram import BaseMiddleware
 from aiogram.types import Update
 from psycopg import Error
 from psycopg_pool import AsyncConnectionPool
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.infrastructure.database.database.db import DB
+from app.infrastructure.database.repositories.booking_repository import BookingRepository
+from app.infrastructure.database.repositories.table_repository import TableRepository
+from app.infrastructure.database.repositories.client_repository import ClientRepository
 
 logger = logging.getLogger(__name__)
 
 
-class DataBaseMiddleware(BaseMiddleware):
+class DatabaseMiddleware(BaseMiddleware):
     async def __call__(
         self,
         handler: Callable[[Update, dict[str, any]], Awaitable[None]],
         event: Update,
         data: dict[str, any]
     ) -> any:
-        db_pool: AsyncConnectionPool = data.get('_db_pool')
-
-        async with db_pool.connection() as connection:
-            async with connection.transaction():
-                try:
-                    data['db'] = DB(connection)
-                    result = await handler(event, data)
-                except Error as e:
-                    logger.exception('Transaction rolled back due to error: %s', e)
-                    result = await handler(event, data)
-
-        return result
+        session: AsyncSession = data.get('session')
+        
+        data['booking_repository'] = BookingRepository(session)
+        data['table_repository'] = TableRepository(session)
+        data['client_repository'] = ClientRepository(session)
+        
+        return await handler(event, data)

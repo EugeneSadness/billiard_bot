@@ -6,6 +6,9 @@ from aiogram.filters import Command
 from app.tgbot.states.booking import BookingStates
 from app.tgbot.keyboards.booking import get_main_menu_keyboard, get_dates_keyboard, get_time_keyboard
 from app.tgbot.utils.booking import get_available_dates, get_available_times
+from app.infrastructure.google.sheets_service import GoogleSheetsService
+from app.infrastructure.database.repositories.booking_repository import BookingRepository
+from app.schemas.booking import BookingCreate
 
 booking_router = Router()
 
@@ -44,3 +47,34 @@ async def process_date(callback: CallbackQuery, state: FSMContext):
         "Выбери, с которого часа",
         reply_markup=get_time_keyboard(available_times)
     )
+
+@booking_router.message(BookingStates.confirm_booking)
+async def confirm_booking(
+    message: Message,
+    state: FSMContext,
+    booking_repository: BookingRepository,
+    sheets_service: GoogleSheetsService
+):
+    if message.text.lower() == "да":
+        # Получаем данные из состояния
+        booking_data = await state.get_data()
+        
+        # Создаем бронь в БД
+        booking = await booking_repository.create_booking(
+            BookingCreate(**booking_data)
+        )
+        
+        # Записываем в Google Sheets
+        await sheets_service.add_booking({
+            'date': booking_data['booking_date'],
+            'start_time': booking_data['start_time'],
+            'client_name': booking_data['client_name'],
+            'phone': booking_data['client_phone'],
+            'table_id': booking_data['table_id']
+        })
+        
+        await message.answer("Отлично! Я записала тебя, дорогуша!")
+        await state.clear()
+    else:
+        await message.answer("Бронирование отменено")
+        await state.clear()
