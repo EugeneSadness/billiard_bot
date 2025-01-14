@@ -16,16 +16,20 @@ logger = logging.getLogger(__name__)
 
 
 class DatabaseMiddleware(BaseMiddleware):
+    def __init__(self, async_session_maker):
+        self.async_session_maker = async_session_maker
+        super().__init__()
+
     async def __call__(
         self,
         handler: Callable[[Update, dict[str, any]], Awaitable[None]],
         event: Update,
         data: dict[str, any]
     ) -> any:
-        session: AsyncSession = data.get('session')
-        
-        data['booking_repository'] = BookingRepository(session)
-        data['table_repository'] = TableRepository(session)
-        data['client_repository'] = ClientRepository(session)
-        
-        return await handler(event, data)
+        async with self.async_session_maker() as session:
+            data['session'] = session
+            data['booking_repository'] = BookingRepository(session)
+            data['table_repository'] = TableRepository(session)
+            data['client_repository'] = ClientRepository(session)
+            
+            return await handler(event, data)

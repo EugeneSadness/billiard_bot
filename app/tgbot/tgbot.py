@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from alembic import command
 from alembic.config import Config
 from sqlalchemy.sql import text
-from google.oauth2.credentials import Credentials
+from google.oauth2.service_account import Credentials
 
 from app.tgbot.handlers.booking import booking_router
 from app.tgbot.middlewares.database import DatabaseMiddleware
