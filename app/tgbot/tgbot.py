@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -20,14 +21,14 @@ logger = logging.getLogger(__name__)
 async def create_db_session():
     # Создаем URL для подключения к БД
     database_url = (
-        f"postgresql+asyncpg://{settings.postgres_user}:{settings.postgres_password}"
+        f"postgresql+asyncpg://{settings.postgres.user}:{settings.postgres.password}"
         f"@{settings.postgres.host}:{settings.postgres.port}/{settings.postgres.name}"
     )
     
     # Создаем движок SQLAlchemy
     engine = create_async_engine(
         database_url,
-        echo=settings.debug,  # SQL логи в режиме отладки
+        echo=settings.get('DEBUG', False),
         pool_size=5,
         max_overflow=10
     )
@@ -51,22 +52,29 @@ async def main():
             logger.info("Database connection successful")
         
         # Применяем миграции
-        alembic_cfg = Config("alembic.ini")
-        command.upgrade(alembic_cfg, "head")
-        logger.info("Migrations applied successfully")
+        # alembic_cfg = Config("alembic.ini")
+        # alembic_cfg.set_main_option("script_location", "alembic")
+        # command.upgrade(alembic_cfg, "head")
+        # logger.info("Migrations applied successfully")
         
         # Инициализация бота
         bot = Bot(token=settings.bot_token)
         storage = MemoryStorage()
         dp = Dispatcher(storage=storage)
         
+        # Получаем путь к корню проекта
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        
+        # Формируем путь к файлу credentials
+        credentials_path = os.path.join(project_root, 'config', 'cred.json')
+        
         # Инициализация Google Sheets
         credentials = Credentials.from_service_account_file(
-            'path/to/credentials.json',
+            credentials_path,
             scopes=['https://www.googleapis.com/auth/spreadsheets']
         )
         sheets_service = GoogleSheetsService(
-            spreadsheet_id=settings.google_spreadsheet_id,
+            spreadsheet_id=settings.google.SPREADSHEET_ID,
             credentials=credentials
         )
         

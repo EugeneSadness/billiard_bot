@@ -1,6 +1,6 @@
+from datetime import datetime
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
-from datetime import datetime, time
 
 class GoogleSheetsService:
     def __init__(self, spreadsheet_id: str, credentials: Credentials):
@@ -8,42 +8,96 @@ class GoogleSheetsService:
         self.service = build('sheets', 'v4', credentials=credentials)
         self.sheet = self.service.spreadsheets()
 
-    def _get_column_letter(self, time_slot: time) -> str:
-        """Преобразует время в букву колонки"""
-        # Начинаем с 15:00 (колонка B)
-        base_hour = 15
-        current_hour = time_slot.hour
+    async def get_sheet_data(self) -> list:
+        result = self.sheet.values().get(
+            spreadsheetId=self.spreadsheet_id,
+            range='A1:Z55'  # 1 строка заголовка + (13 часов × 4 стола) + небольшой запас
+        ).execute()
+        return result.get('values', [])
         
-        if current_hour < base_hour:
-            current_hour += 24
+    async def get_available_dates(self) -> list:
+        data = await self.get_sheet_data()
+        available_dates = []
         
-        column_index = current_hour - base_hour + 1
-        return chr(65 + column_index)  # A=65 в ASCII
-
-    async def add_booking(self, booking_data: dict) -> bool:
-        try:
-            # Преобразуем дату в номер строки (каждая строка = день)
-            booking_date = datetime.strptime(booking_data['date'], '%d.%m.%y')
-            row = booking_date.day + 1  # +1 потому что первая строка - заголовок
-
-            # Получаем букву колонки из времени начала
-            column = self._get_column_letter(booking_data['start_time'])
+        if not data or len(data) < 2:
+            return available_dates
             
-            # Формируем диапазон ячейки (например, B2)
-            cell_range = f"{column}{row}"
+        # Получаем заголовки с датами (начиная с 3-го столбца - индекс 2)
+        headers = data[0][2:]  # Пропускаем 'Время', 'Столы'
+        
+        for col_idx, date_str in enumerate(headers, start=2):
+            if not date_str:  # Пропускаем пустые заголовки
+                continue
+                
+            try:
+                # Парсим дату из заголовка
+                date = datetime.strptime(date_str, '%d.%m')
+                date = date.replace(year=datetime.now().year)
+                
+                # Проверяем, есть ли свободные слоты в этой колонке
+                has_free_slots = False
+                for row in data[1:]:  # Пропускаем заголовок
+                    if len(row) <= col_idx or (len(row) > col_idx and not row[col_idx].strip()):
+                        has_free_slots = True
+                        break
+                
+                if has_free_slots:
+                    available_dates.append({
+                        'date': date.strftime('%d.%m.%y'),
+                        'weekday': date.strftime('%a')[:2].upper()
+                    })
+                    
+            except ValueError:
+                continue  # Пропускаем неверный формат даты
+        
+        return available_dates
+    
+    async def get_available_times(self, date_str: str) -> list:
+        data = await self.get_sheet_data()
+        available_times = []
+        
+        if not data or len(data) < 2:
+            return available_times
             
-            # Формируем текст для записи
-            value = f"{booking_data['client_name']}\n{booking_data['phone']}"
+        # Находим индекс колонки с нужной датой
+        headers = data[0]
+        target_date = datetime.strptime(date_str, '%d.%m.%y')
+        target_col_idx = None
+        
+        # Начинаем с 3-го столбца (индекс 2), пропуская 'Время', 'Столы'
+        for idx, header in enumerate(headers[2:], start=2):
+            try:
+                if header:
+                    header_date = datetime.strptime(header, '%d.%m')
+                    if (header_date.day == target_date.day and 
+                        header_date.month == target_date.month):
+                        target_col_idx = idx
+                        break
+            except ValueError:
+                continue
+        
+        if target_col_idx is not None:
+            # Проходим по строкам с шагом 4 (каждый временной слот)
+            for i in range(3, len(data), 4):
+                if i + 4 > len(data):  # Проверяем, что хватает строк для полного блока
+                    break
+                    
+                time_block = data[i:i+4]  # Берем блок из 4 строк
+                time = time_block[0][0]  # Время всегда в первой строке блока
+                
+                # Проверяем наличие свободных столов в этом временном блоке
+                has_free_tables = False
+                for row in time_block:
+                    # Если строка короче, чем целевой индекс - значит слот свободен
+                    if len(row) <= target_col_idx:
+                        has_free_tables = True
+                        break
+                
+                if has_free_tables:
+                    available_times.append(time)
+        
+        return sorted(available_times)
 
-            # Записываем данные
-            self.sheet.values().update(
-                spreadsheetId=self.spreadsheet_id,
-                range=cell_range,
-                valueInputOption='RAW',
-                body={'values': [[value]]}
-            ).execute()
-
-            return True
-        except Exception as e:
-            print(f"Error updating sheet: {e}")
-            return False 
+    async def book_time(self, date: str, time: str, name: str) -> bool:
+        # TODO: Реализовать бронирование времени
+        pass 

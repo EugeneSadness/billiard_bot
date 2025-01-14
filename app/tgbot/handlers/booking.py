@@ -27,21 +27,42 @@ async def start_booking(message: Message, state: FSMContext):
     await message.answer("Отлично! Давай я помогу тебе, и мы вместе сделаем это\n\nКак твоё имя, дорогуша?")
 
 @booking_router.message(BookingStates.waiting_for_name)
-async def process_name(message: Message, state: FSMContext):
+async def process_name(
+    message: Message, 
+    state: FSMContext,
+    sheets_service: GoogleSheetsService
+):
     await state.update_data(client_name=message.text)
-    available_dates = get_available_dates()
+    available_dates = await get_available_dates(sheets_service)
+    
+    if not available_dates:
+        await message.answer("Извини, дорогуша, но на ближайшие дни все занято!")
+        await state.clear()
+        return
+        
     await state.set_state(BookingStates.waiting_for_date)
     await message.answer(
         f"Приятно познакомиться, {message.text}!\n\nВыбери день:",
         reply_markup=get_dates_keyboard(available_dates)
-    ) 
+    )
 
 @booking_router.callback_query(BookingStates.waiting_for_date)
-async def process_date(callback: CallbackQuery, state: FSMContext):
+async def process_date(
+    callback: CallbackQuery, 
+    state: FSMContext,
+    sheets_service: GoogleSheetsService
+):
     selected_date = callback.data.replace('date_', '')
     await state.update_data(selected_date=selected_date)
     
-    available_times = get_available_times(selected_date)
+    available_times = await get_available_times(sheets_service, selected_date)
+    
+    if not available_times:
+        await callback.message.edit_text(
+            "Извини, но на этот день все часы заняты! Выбери другой день:"
+        )
+        return
+        
     await state.set_state(BookingStates.waiting_for_start_time)
     await callback.message.edit_text(
         "Выбери, с которого часа",

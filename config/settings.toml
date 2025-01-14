@@ -1,8 +1,9 @@
 [default]
-
+    DEBUG = false
     LEVEL_NAME = "DEBUG"
 
 [development]
+    DEBUG = true
 
     [development.logs]
         LEVEL_NAME = "DEBUG"
@@ -16,17 +17,7 @@
         HOST = 'localhost'
         PORT = 5432
         USER = 'postgres'
-    
-    [development.redis]
-        HOST = 'localhost'
-        PORT = 6379
-        DATABASE = 1
+        PASSWORD = 'postgres'
 
-    [development.nats]
-        SERVERS = 'nats://localhost:4222'
-        DELAYED_CONSUMER_SUBJECT = 'aiogram.delayed.messages'
-        DELAYED_CONSUMER_STREAM = 'delayed_messages_aiogram'
-        DELAYED_CONSUMER_DURABLE_NAME = 'delayed_messages_consumer'
-    
-    [development.cache]
-        USE_CACHE = false
+    [development.google]
+        SPREADSHEET_ID = "1lOULWGS1dNpw_E7TYTtJneT2Ie05UAqEGgpi2-i1XnY"
