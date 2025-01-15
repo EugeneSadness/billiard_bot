@@ -4,11 +4,12 @@ from aiogram.fsm.context import FSMContext
 from aiogram.filters import Command
 
 from app.tgbot.states.booking import BookingStates
-from app.tgbot.keyboards.booking import get_main_menu_keyboard, get_dates_keyboard, get_time_keyboard
-from app.tgbot.utils.booking import get_available_dates, get_available_times
+from app.tgbot.keyboards.booking import get_main_menu_keyboard, get_dates_keyboard, get_time_keyboard, get_end_time_keyboard
+from app.tgbot.utils.booking import get_available_dates, get_available_times, get_available_end_times
 from app.infrastructure.google.sheets_service import GoogleSheetsService
 from app.infrastructure.database.repositories.booking_repository import BookingRepository
 from app.schemas.booking import BookingCreate
+from app.tgbot.utils.date_helpers import format_date_with_weekday
 
 booking_router = Router()
 
@@ -65,37 +66,71 @@ async def process_date(
         
     await state.set_state(BookingStates.waiting_for_start_time)
     await callback.message.edit_text(
-        "Выбери, с которого часа",
+        "Выбери, с которого часа начнём:",
         reply_markup=get_time_keyboard(available_times)
     )
 
-@booking_router.message(BookingStates.confirm_booking)
-async def confirm_booking(
-    message: Message,
+@booking_router.callback_query(BookingStates.waiting_for_start_time)
+async def process_start_time(
+    callback: CallbackQuery,
     state: FSMContext,
-    booking_repository: BookingRepository,
     sheets_service: GoogleSheetsService
 ):
-    if message.text.lower() == "да":
-        # Получаем данные из состояния
-        booking_data = await state.get_data()
-        
-        # Создаем бронь в БД
-        booking = await booking_repository.create_booking(
-            BookingCreate(**booking_data)
+    start_time = callback.data.replace('time:', '')
+    state_data = await state.get_data()
+    
+    best_table, available_end_times = await sheets_service.get_best_table_and_end_times(
+        state_data['selected_date'],
+        start_time
+    )
+    
+    if not best_table or not available_end_times:
+        await callback.message.edit_text(
+            "Извини, но на это время нет свободных столов! Выбери другое время:"
         )
-        
-        # Записываем в Google Sheets
-        await sheets_service.add_booking({
-            'date': booking_data['booking_date'],
-            'start_time': booking_data['start_time'],
-            'client_name': booking_data['client_name'],
-            'phone': booking_data['client_phone'],
-            'table_id': booking_data['table_id']
-        })
-        
-        await message.answer("Отлично! Я записала тебя, дорогуша!")
-        await state.clear()
-    else:
-        await message.answer("Бронирование отменено")
-        await state.clear()
+        return
+    
+    await state.update_data(
+        start_time=start_time,
+        table_id=best_table
+    )
+    
+    await state.set_state(BookingStates.waiting_for_end_time)
+    await callback.message.edit_text(
+        "Выбери, до которого часа играем:",
+        reply_markup=get_end_time_keyboard(available_end_times)
+    )
+
+@booking_router.callback_query(BookingStates.waiting_for_end_time)
+async def process_end_time(
+    callback: CallbackQuery,
+    state: FSMContext
+):
+    end_time = callback.data.replace('end_time:', '')
+    await state.update_data(end_time=end_time)
+    
+    await state.set_state(BookingStates.waiting_for_phone)
+    await callback.message.edit_text(
+        "Напиши мне свой номерок 😉"
+    )
+
+@booking_router.message(BookingStates.waiting_for_phone)
+async def process_phone(
+    message: Message,
+    state: FSMContext
+):
+    await state.update_data(client_phone=message.text)
+    booking_data = await state.get_data()
+    
+    date_str, weekday_ru = format_date_with_weekday(booking_data['selected_date'])
+    
+    await message.answer(
+        f"Отлично, дорогуша!\n"
+        f"Время наслаждений забронировано с {booking_data['start_time']} "
+        f"до {booking_data['end_time']}, "
+        f"{date_str} ({weekday_ru}), "
+        f"жду тебя в The Feel's 🩷"
+    )
+    
+    # TODO: Сохранить бронирование в БД и Google Sheets
+    await state.clear()

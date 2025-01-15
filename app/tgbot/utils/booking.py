@@ -5,3 +5,6 @@ async def get_available_dates(sheets_service):
 
 async def get_available_times(sheets_service, date):
     return await sheets_service.get_available_times(date)
+
+async def get_available_end_times(sheets_service, date, start_time):
+    return await sheets_service.get_available_end_times(date, start_time)
