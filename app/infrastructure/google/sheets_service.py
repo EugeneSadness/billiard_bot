@@ -322,3 +322,45 @@ class GoogleSheetsService:
         except Exception as e:
             logger.error(f"Error clearing booking in sheets: {e}")
             return False
+
+    async def block_day_in_sheets(self, date_str: str) -> bool:
+        try:
+            data = await self.get_sheet_data()
+            
+            # Находим индекс строки с нужной датой
+            target_date = datetime.strptime(date_str, '%d.%m.%y')
+            target_row_idx = None
+            
+            for idx in range(3, len(data), 4):
+                try:
+                    date_cell = data[idx][0]
+                    if date_cell:
+                        row_date = datetime.strptime(date_cell, '%d.%m')
+                        if (row_date.day == target_date.day and 
+                            row_date.month == target_date.month):
+                            target_row_idx = idx
+                            break
+                except (ValueError, IndexError):
+                    continue
+            
+            if target_row_idx is None:
+                return False
+
+            # Заполняем все ячейки для всех столов на этот день
+            for table_idx in range(4):
+                row_idx = target_row_idx + table_idx
+                range_name = f"C{row_idx + 1}:O{row_idx + 1}"  # От C до O (все временные слоты)
+                
+                # Используем "BLOCKED" для всех ячеек
+                self.sheet.values().update(
+                    spreadsheetId=self.spreadsheet_id,
+                    range=range_name,
+                    valueInputOption='RAW',
+                    body={'values': [['BLOCKED'] * 13]}  # 13 временных слотов
+                ).execute()
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error blocking day in sheets: {e}")
+            return False

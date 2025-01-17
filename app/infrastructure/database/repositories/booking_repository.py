@@ -1,6 +1,6 @@
-from datetime import datetime, date, time
+from datetime import datetime, date, time, timedelta, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, update
 from sqlalchemy.orm import selectinload
 from app.infrastructure.database.models.booking import Booking
 from app.schemas.booking import BookingCreate, BookingFilter, BookingStatus
@@ -93,3 +93,25 @@ class BookingRepository:
         
         result = await self.session.execute(query)
         return result.first() is None 
+
+    async def update_past_bookings_status(self) -> int:
+        # Get current date at 3 AM MSK
+        msk_timezone = timezone(timedelta(hours=3))
+        current_date = datetime.now(msk_timezone).date()
+        
+        # Update all active bookings from past dates
+        query = (
+            update(Booking)
+            .where(
+                and_(
+                    Booking.booking_date < current_date,
+                    Booking.status == BookingStatus.ACTIVE
+                )
+            )
+            .values(status=BookingStatus.COMPLETED)
+        )
+        
+        result = await self.session.execute(query)
+        await self.session.commit()
+        
+        return result.rowcount 

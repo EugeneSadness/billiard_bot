@@ -11,4 +11,8 @@ class BookingStates(StatesGroup):
     
     # Для отмены брони
     select_booking_to_cancel = State()
-    confirm_cancellation = State() 
+    confirm_cancellation = State()
+    waiting_for_block_day = State()
+    admin_manage_bookings = State()
+    admin_waiting_for_client_name = State()
+    admin_waiting_for_client_phone = State() 

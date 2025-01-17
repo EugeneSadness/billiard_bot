@@ -21,16 +21,15 @@ def get_main_menu_inline_keyboard() -> InlineKeyboardMarkup:
     builder.adjust(1)  # По одной кнопке в ряд
     return builder.as_markup()
 
-def get_dates_keyboard(available_dates: list) -> InlineKeyboardMarkup:
+def get_dates_keyboard(available_dates: list, is_admin: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     
     for date in available_dates:
-        # Используем helper для форматирования даты и получения русского названия дня недели
-        date_str = date['date'][:5]  # Берем только dd.mm
-        _, weekday_ru = format_date_with_weekday(date['date'])  # Получаем русское название дня недели
+        date_str = date['date'][:5]
+        _, weekday_ru = format_date_with_weekday(date['date'])
         
         builder.button(
-            text=f"{date_str} ({weekday_ru.capitalize()})",  # Капитализируем первую букву дня недели
+            text=f"{date_str} ({weekday_ru.capitalize()})",
             callback_data=f"date_{date['date']}"
         )
     
@@ -39,7 +38,7 @@ def get_dates_keyboard(available_dates: list) -> InlineKeyboardMarkup:
         callback_data="back_to_main"
     )
     
-    builder.adjust(2)  
+    builder.adjust(2)
     return builder.as_markup()
 
 def sort_time(time: str) -> int:
@@ -53,10 +52,9 @@ def sort_time(time: str) -> int:
         hour += 24
     return hour
 
-def get_time_keyboard(available_times: list) -> InlineKeyboardMarkup:
+def get_time_keyboard(available_times: list, is_admin: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     
-    # Сортируем времена с учетом перехода через полночь
     sorted_times = sorted(available_times, key=sort_time)
     
     for time in sorted_times:
@@ -70,13 +68,12 @@ def get_time_keyboard(available_times: list) -> InlineKeyboardMarkup:
         callback_data="back_to_dates"
     )
     
-    builder.adjust(3)  # По три времени в ряд
+    builder.adjust(3)
     return builder.as_markup()
 
-def get_end_time_keyboard(available_end_times: list[str]) -> InlineKeyboardMarkup:
+def get_end_time_keyboard(available_end_times: list[str], is_admin: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     
-    # Используем ту же логику сортировки для времени окончания
     sorted_times = sorted(available_end_times, key=sort_time)
     
     for time in sorted_times:
@@ -90,10 +87,10 @@ def get_end_time_keyboard(available_end_times: list[str]) -> InlineKeyboardMarku
         callback_data="back_to_start_time"
     )
     
-    builder.adjust(3)  # По три времени в ряд
-    return builder.as_markup() 
+    builder.adjust(3)
+    return builder.as_markup()
 
-def get_cancel_booking_keyboard(bookings: list[Booking]) -> InlineKeyboardMarkup:
+def get_cancel_booking_keyboard(bookings: list[Booking], is_admin: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     
     for booking in bookings:
@@ -112,5 +109,54 @@ def get_cancel_booking_keyboard(bookings: list[Booking]) -> InlineKeyboardMarkup
         callback_data="back_to_main"
     )
     
+    builder.adjust(1)
+    return builder.as_markup()
+
+def get_admin_menu_inline_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="Забронировать столик 🎱",
+        callback_data="start_booking"
+    )
+    builder.button(
+        text="Заблокировать день 🚫",
+        callback_data="block_day"
+    )
+    builder.button(
+        text="Управление бронями 👥",
+        callback_data="manage_bookings"
+    )
+    builder.adjust(1)  # По одной кнопке в ряд
+    return builder.as_markup()
+
+def get_all_bookings_keyboard(bookings: list[Booking]) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    
+    for booking in bookings:
+        date_str, weekday_ru = format_date_with_weekday(booking.booking_date.strftime('%d.%m.%y'))
+        button_text = (
+            f"{booking.client_name} ({booking.client_phone})\n"
+            f"{date_str} ({weekday_ru}) "
+            f"{booking.start_time.strftime('%H:%M')}-{booking.end_time.strftime('%H:%M')}"
+        )
+        builder.button(
+            text=button_text,
+            callback_data=f"admin_cancel:{booking.id}"
+        )
+    
+    builder.button(
+        text="« Назад в меню",
+        callback_data="back_to_main"
+    )
+    
+    builder.adjust(1)
+    return builder.as_markup()
+
+def get_back_to_admin_menu_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="« Назад в админ-меню",
+        callback_data="back_to_main"
+    )
     builder.adjust(1)
     return builder.as_markup() 

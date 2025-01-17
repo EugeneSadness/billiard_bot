@@ -11,6 +11,7 @@ from sqlalchemy.sql import text
 from google.oauth2.service_account import Credentials
 
 from app.tgbot.handlers.booking import booking_router
+from app.tgbot.handlers.admin import admin_router
 from app.tgbot.middlewares.database import DatabaseMiddleware
 from app.tgbot.middlewares.google_sheets import GoogleSheetsMiddleware
 from config.config import settings
@@ -20,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 async def create_db_session():
     # Создаем URL для подключения к БД
-    database_url = f"postgresql+psycopg://{settings.postgres_user}:{settings.postgres_password}@{settings.postgres.host}:{settings.postgres.port}/{settings.postgres_db}"
+    database_url = f"postgresql+psycopg://{settings.postgres_user}:{settings.postgres_password}@{settings.postgres_host}:{settings.postgres.port}/{settings.postgres_db}"
 
     
     # Создаем движок SQLAlchemy
@@ -82,12 +83,18 @@ async def main():
 
         logger.info("Including routers")
         dp.include_router(booking_router)
+        dp.include_router(admin_router)
+
 
         # Подключаем middleware к обоим типам обработчиков
         booking_router.message.middleware(DatabaseMiddleware(async_session))
         booking_router.callback_query.middleware(DatabaseMiddleware(async_session))
         booking_router.message.middleware(GoogleSheetsMiddleware(sheets_service))
         booking_router.callback_query.middleware(GoogleSheetsMiddleware(sheets_service))
+        admin_router.message.middleware(DatabaseMiddleware(async_session))
+        admin_router.callback_query.middleware(DatabaseMiddleware(async_session))
+        admin_router.message.middleware(GoogleSheetsMiddleware(sheets_service))
+        admin_router.callback_query.middleware(GoogleSheetsMiddleware(sheets_service))
         
         logger.info("Starting bot")
         await dp.start_polling(bot)
