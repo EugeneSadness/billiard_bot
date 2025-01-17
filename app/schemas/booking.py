@@ -16,7 +16,7 @@ class BookingBase(BaseModel):
     end_time: time
 
 class BookingCreate(BookingBase):
-    pass
+    client_id: int | None = None
 
 class BookingUpdate(BaseModel):
     status: BookingStatus | None = None

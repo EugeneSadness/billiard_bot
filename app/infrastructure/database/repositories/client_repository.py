@@ -1,6 +1,6 @@
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, update
 from app.infrastructure.database.models.client import Client
 
 class ClientRepository:
@@ -29,4 +29,13 @@ class ClientRepository:
         return result.scalar_one_or_none()
 
     async def get_client(self, client_id: int) -> Client | None:
-        return await self.session.get(Client, client_id) 
+        return await self.session.get(Client, client_id)
+
+    async def update_visit_date(self, client_id: int, visit_date: datetime) -> None:
+        query = (
+            update(Client)
+            .where(Client.id == client_id)
+            .values(visit_date=visit_date)
+        )
+        await self.session.execute(query)
+        await self.session.commit() 

@@ -1,6 +1,7 @@
 from datetime import datetime, date, time
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
+from sqlalchemy.orm import selectinload
 from app.infrastructure.database.models.booking import Booking
 from app.schemas.booking import BookingCreate, BookingFilter, BookingStatus
 
@@ -23,27 +24,36 @@ class BookingRepository:
         await self.session.refresh(db_booking)
         return db_booking
 
-    async def get_bookings(self, filters: BookingFilter | None = None) -> list[Booking]:
-        query = select(Booking)
+    async def get_bookings(self, filters: BookingFilter) -> list[Booking]:
+        query = (
+            select(Booking)
+            .options(selectinload(Booking.table))
+        )
         
-        if filters:
-            conditions = []
-            if filters.date_from:
-                conditions.append(Booking.booking_date >= filters.date_from)
-            if filters.date_to:
-                conditions.append(Booking.booking_date <= filters.date_to)
-            if filters.status:
-                conditions.append(Booking.status == filters.status)
-            if filters.table_id:
-                conditions.append(Booking.table_id == filters.table_id)
-            if filters.client_phone:
-                conditions.append(Booking.client_phone == filters.client_phone)
+        conditions = []
+        
+        if filters.client_phone:
+            conditions.append(Booking.client_phone == filters.client_phone)
             
-            if conditions:
-                query = query.where(and_(*conditions))
-
+        if filters.date_from:
+            conditions.append(Booking.booking_date >= filters.date_from)
+            
+        if filters.date_to:
+            conditions.append(Booking.booking_date <= filters.date_to)
+            
+        if filters.status:
+            conditions.append(Booking.status == filters.status)
+            
+        if filters.table_id:
+            conditions.append(Booking.table_id == filters.table_id)
+            
+        if conditions:
+            query = query.where(and_(*conditions))
+            
+        query = query.order_by(Booking.booking_date, Booking.start_time)
+        
         result = await self.session.execute(query)
-        return result.scalars().all()
+        return list(result.scalars().all())
 
     async def get_booking(self, booking_id: int) -> Booking | None:
         return await self.session.get(Booking, booking_id)

@@ -20,10 +20,8 @@ logger = logging.getLogger(__name__)
 
 async def create_db_session():
     # Создаем URL для подключения к БД
-    database_url = (
-        f"postgresql+asyncpg://{settings.postgres.user}:{settings.postgres.password}"
-        f"@{settings.postgres.host}:{settings.postgres.port}/{settings.postgres.name}"
-    )
+    database_url = f"postgresql+psycopg://{settings.postgres_user}:{settings.postgres_password}@{settings.postgres.host}:{settings.postgres.port}/{settings.postgres_db}"
+
     
     # Создаем движок SQLAlchemy
     engine = create_async_engine(
@@ -78,10 +76,18 @@ async def main():
             credentials=credentials
         )
         
-        # Регистрируем middleware
+        logger.info("Including middlewares")
         dp.update.middleware(DatabaseMiddleware(async_session))
         dp.update.middleware(GoogleSheetsMiddleware(sheets_service))
+
+        logger.info("Including routers")
         dp.include_router(booking_router)
+
+        # Подключаем middleware к обоим типам обработчиков
+        booking_router.message.middleware(DatabaseMiddleware(async_session))
+        booking_router.callback_query.middleware(DatabaseMiddleware(async_session))
+        booking_router.message.middleware(GoogleSheetsMiddleware(sheets_service))
+        booking_router.callback_query.middleware(GoogleSheetsMiddleware(sheets_service))
         
         logger.info("Starting bot")
         await dp.start_polling(bot)

@@ -1,90 +1,116 @@
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-def get_main_menu_keyboard() -> ReplyKeyboardMarkup:
-    keyboard = [
-        [KeyboardButton(text="Посмотреть свободное местечко")],
-        [KeyboardButton(text="Забронировать бильярдный столик в The Feel's")],
-        [KeyboardButton(text="Отменить существующую бронь")]
-    ]
-    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+from app.infrastructure.database.models.booking import Booking
+from app.tgbot.utils.date_helpers import format_date_with_weekday
+
+def get_main_menu_inline_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="Забронировать столик 🎱",
+        callback_data="start_booking"
+    )
+    builder.button(
+        text="Мои брони 📅",
+        callback_data="my_bookings"
+    )
+    builder.button(
+        text="Отменить бронь ❌",
+        callback_data="cancel_booking"
+    )
+    builder.adjust(1)  # По одной кнопке в ряд
+    return builder.as_markup()
 
 def get_dates_keyboard(available_dates: list) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+    
     for date in available_dates:
+        # Используем helper для форматирования даты и получения русского названия дня недели
+        date_str = date['date'][:5]  # Берем только dd.mm
+        _, weekday_ru = format_date_with_weekday(date['date'])  # Получаем русское название дня недели
+        
         builder.button(
-            text=f"{date['date']} ({date['weekday']})", 
+            text=f"{date_str} ({weekday_ru.capitalize()})",  # Капитализируем первую букву дня недели
             callback_data=f"date_{date['date']}"
         )
-    builder.adjust(2)
+    
+    builder.button(
+        text="« Назад в меню",
+        callback_data="back_to_main"
+    )
+    
+    builder.adjust(2)  
     return builder.as_markup()
 
-def get_time_keyboard(available_times: list) -> InlineKeyboardMarkup:
-    # Преобразуем времена в datetime для правильной сортировки
-    def time_to_datetime(time_str):
-        hour = int(time_str.split(':')[0])
-        # Для времени после полуночи добавляем 24 часа для правильной сортировки
-        if hour < 4:  # для времени 00:00 - 03:00
-            hour += 24
-        return hour
+def sort_time(time: str) -> int:
+    """
+    Вспомогательная функция для сортировки времени.
+    Преобразует время в минуты, при этом для времени после полуночи добавляет 24 часа
+    """
+    hour = int(time.split(':')[0])
+    # Если час между 0 и 3, добавляем 24 часа для правильной сортировки
+    if 0 <= hour <= 3:
+        hour += 24
+    return hour
 
-    # Сортируем времена
-    sorted_times = sorted(available_times, key=time_to_datetime)
+def get_time_keyboard(available_times: list) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
     
-    keyboard = []
-    current_row = []
+    # Сортируем времена с учетом перехода через полночь
+    sorted_times = sorted(available_times, key=sort_time)
     
-    # Создаем кнопки
     for time in sorted_times:
-        current_row.append(
-            InlineKeyboardButton(
-                text=time,
-                callback_data=f"time:{time}"
-            )
+        builder.button(
+            text=f"{time}",
+            callback_data=f"time:{time}"
         )
-        
-        # Формируем ряды по 3 кнопки
-        if len(current_row) == 3:
-            keyboard.append(current_row)
-            current_row = []
     
-    # Добавляем оставшиеся кнопки
-    if current_row:
-        keyboard.append(current_row)
+    builder.button(
+        text="« Назад к выбору даты",
+        callback_data="back_to_dates"
+    )
     
-    return InlineKeyboardMarkup(inline_keyboard=keyboard) 
+    builder.adjust(3)  # По три времени в ряд
+    return builder.as_markup()
 
 def get_end_time_keyboard(available_end_times: list[str]) -> InlineKeyboardMarkup:
-    # Преобразуем времена в datetime для правильной сортировки
-    def time_to_datetime(time_str):
-        hour = int(time_str.split(':')[0])
-        # Для времени после полуночи добавляем 24 часа для правильной сортировки
-        if hour < 4:  # для времени 00:00 - 03:00
-            hour += 24
-        return hour
-
-    # Сортируем времена
-    sorted_times = sorted(available_end_times, key=time_to_datetime)
+    builder = InlineKeyboardBuilder()
     
-    keyboard = []
-    current_row = []
+    # Используем ту же логику сортировки для времени окончания
+    sorted_times = sorted(available_end_times, key=sort_time)
     
-    # Создаем кнопки
     for time in sorted_times:
-        current_row.append(
-            InlineKeyboardButton(
-                text=time,
-                callback_data=f"end_time:{time}"
-            )
+        builder.button(
+            text=f"{time}",
+            callback_data=f"end_time:{time}"
         )
-        
-        # Формируем ряды по 3 кнопки
-        if len(current_row) == 3:
-            keyboard.append(current_row)
-            current_row = []
     
-    # Добавляем оставшиеся кнопки
-    if current_row:
-        keyboard.append(current_row)
+    builder.button(
+        text="« Назад к выбору времени",
+        callback_data="back_to_start_time"
+    )
     
-    return InlineKeyboardMarkup(inline_keyboard=keyboard) 
+    builder.adjust(3)  # По три времени в ряд
+    return builder.as_markup() 
+
+def get_cancel_booking_keyboard(bookings: list[Booking]) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    
+    for booking in bookings:
+        date_str, weekday_ru = format_date_with_weekday(booking.booking_date.strftime('%d.%m.%y'))
+        button_text = (
+            f"{date_str} ({weekday_ru}) "
+            f"{booking.start_time.strftime('%H:%M')}-{booking.end_time.strftime('%H:%M')}"
+        )
+        builder.button(
+            text=button_text,
+            callback_data=f"cancel_booking:{booking.id}"
+        )
+    
+    builder.button(
+        text="« Назад в меню",
+        callback_data="back_to_main"
+    )
+    
+    builder.adjust(1)
+    return builder.as_markup() 

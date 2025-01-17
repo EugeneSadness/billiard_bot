@@ -1,6 +1,9 @@
 from datetime import datetime
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
+import logging
+
+logger = logging.getLogger(__name__)
 
 class GoogleSheetsService:
     def __init__(self, spreadsheet_id: str, credentials: Credentials):
@@ -11,7 +14,7 @@ class GoogleSheetsService:
     async def get_sheet_data(self) -> list:
         result = self.sheet.values().get(
             spreadsheetId=self.spreadsheet_id,
-            range='A1:Z55'  # 1 строка заголовка + (13 часов × 4 стола) + небольшой запас
+            range='A1:O39'  # Увеличиваем диапазон для новой структуры
         ).execute()
         return result.get('values', [])
         
@@ -19,247 +22,303 @@ class GoogleSheetsService:
         data = await self.get_sheet_data()
         available_dates = []
         
-        if not data or len(data) < 2:
+        if not data or len(data) < 3:  # Минимум нужны строки: время + 3 стола
             return available_dates
             
-        # Получаем заголовки с датами (начиная с 3-го столбца - индекс 2)
-        headers = data[0][2:]  # Пропускаем 'Время', 'Столы'
-        
-        for col_idx, date_str in enumerate(headers, start=2):
-            if not date_str:  # Пропускаем пустые заголовки
+        # Получаем даты из первого столбца (пропускаем первые 3 строки с временем)
+        for row_idx in range(3, len(data), 4):  # Шаг 4, так как каждая дата занимает 4 строки (по числу столов)
+            date_cell = data[row_idx][0] if len(data[row_idx]) > 0 else None
+            
+            if not date_cell or not date_cell.strip():  # Пропускаем пустые ячейки
                 continue
                 
             try:
-                # Парсим дату из заголовка
-                date = datetime.strptime(date_str, '%d.%m')
+                # Парсим дату
+                date = datetime.strptime(date_cell, '%d.%m')
                 date = date.replace(year=datetime.now().year)
                 
-                # Проверяем, есть ли свободные слоты в этой колонке
+                # Проверяем наличие свободных слотов для этой даты
                 has_free_slots = False
-                for row in data[1:]:  # Пропускаем заголовок
-                    if len(row) <= col_idx or (len(row) > col_idx and not row[col_idx].strip()):
+                for table_idx in range(4):  # Проверяем все 4 стола для этой даты
+                    current_row = data[row_idx + table_idx]
+                    if len(current_row) < 3:
                         has_free_slots = True
+                        break
+                    # Проверяем ячейки времени (начиная с индекса 1, пропуская название стола)
+                    for time_idx in range(1, len(current_row)):
+                        if current_row[time_idx].strip() == '' or len(current_row) < 15:
+                            has_free_slots = True
+                            break
+                    if has_free_slots:
                         break
                 
                 if has_free_slots:
                     available_dates.append({
                         'date': date.strftime('%d.%m.%y'),
-                        'weekday': date.strftime('%a')[:2].upper()
+                        'weekday': date.strftime('%A')
                     })
                     
-            except ValueError:
-                continue  # Пропускаем неверный формат даты
-        
+            except (ValueError, AttributeError) as e:
+                logger.error(f"Error parsing date {date_cell}: {e}")
+                continue
+                
         return available_dates
-    
-    async def get_available_times(self, date_str: str) -> list:
+
+    async def get_available_times(self, selected_date: str) -> list:
         data = await self.get_sheet_data()
         available_times = []
-        
-        if not data or len(data) < 2:
+            
+        # Получаем строку с временем (первая строка)
+        time_slots = data[0][2:14]  # Пропускаем первую ячейку (там "Время")
+        # Ищем индекс строки с выбранной датой
+        date_row_idx = None
+        for idx in range(3, len(data), 4):
+            selected_date = selected_date.split('.')[0] + '.' + selected_date.split('.')[1]
+            if data[idx][0].strip() == selected_date:
+                date_row_idx = idx
+                break
+                
+        if date_row_idx is None:
             return available_times
             
-        # Находим индекс колонки с нужной датой
-        headers = data[0]
-        target_date = datetime.strptime(date_str, '%d.%m.%y')
-        target_col_idx = None
-        
-        # Начинаем с 3-го столбца (индекс 2), пропуская 'Время', 'Столы'
-        for idx, header in enumerate(headers[2:], start=2):
-            try:
-                if header:
-                    header_date = datetime.strptime(header, '%d.%m')
-                    if (header_date.day == target_date.day and 
-                        header_date.month == target_date.month):
-                        target_col_idx = idx
-                        break
-            except ValueError:
-                continue
-        
-        if target_col_idx is not None:
-            for i in range(3, len(data), 4):
-                if i + 4 > len(data):  
+        # Проверяем доступность каждого временного слота
+        for time_idx, time_slot in enumerate(time_slots, start=2):  
+            # Проверяем все столы для этого времени
+            has_free_tables = False
+            for table_idx in range(4):
+                current_row = data[date_row_idx + table_idx]
+                if len(current_row) <= time_idx or (len(current_row) > time_idx and current_row[time_idx].strip() == ''):
+                    has_free_tables = True
                     break
-                    
-                time_block = data[i:i+4]  
-                time = time_block[0][0]  
+
+            if has_free_tables:
+                available_times.append(time_slot)
                 
-                # Проверяем наличие свободных столов в этом временном блоке
-                has_free_tables = False
-                for row in time_block:
-                    if len(row) <= target_col_idx:
-                        has_free_tables = True
-                        break
-
-                    else:
-                        if row[target_col_idx] == '':
-                            has_free_tables = True
-                            break
-                
-                if has_free_tables:
-                    available_times.append(time)
-        
-        return sorted(available_times)
-
-    async def book_time(self, date: str, time: str, name: str) -> bool:
-        # TODO: Реализовать бронирование времени
-        pass 
-
-    async def get_available_end_times(self, date_str: str, start_time: str) -> list[str]:
-        data = await self.get_sheet_data()
-        available_end_times = []
-        
-        if not data or len(data) < 2:
-            return available_end_times
-            
-        # Находим индекс колонки с нужной датой
-        headers = data[0]
-        target_date = datetime.strptime(date_str, '%d.%m.%y')
-        target_col_idx = None
-        
-        # Начинаем с 3-го столбца (индекс 2), пропуская 'Время', 'Столы'
-        for idx, header in enumerate(headers[2:], start=2):
-            try:
-                if header:
-                    header_date = datetime.strptime(header, '%d.%m')
-                    if (header_date.day == target_date.day and 
-                        header_date.month == target_date.month):
-                        target_col_idx = idx
-                        break
-            except ValueError:
-                continue
-
-        
-        if target_col_idx is not None:
-            # Находим индекс строки с начальным временем
-            start_row_idx = None
-            for i in range(3, len(data), 4):
-                if i + 4 > len(data):
-                    break
-                
-                time_block = data[i:i+4]
-                if time_block[0][0] == start_time:
-                    start_row_idx = i
-                    break
-                print(f"time_block: {time_block[0][0]}, start_time: {start_time}")
-            
-            if start_row_idx is not None:
-                # Проверяем последующие временные блоки
-                for i in range(start_row_idx + 4, len(data), 4):
-                    if i + 4 > len(data):
-                        break
-                    
-                    time_block = data[i:i+4]
-                    time = time_block[0][0]
-                    
-                    # Проверяем наличие свободных столов в этом временном блоке
-                    has_free_tables = False
-                    for row in time_block:
-                        if len(row) <= target_col_idx:
-                            has_free_tables = True
-                            break
-                    
-                    if not has_free_tables:
-                        break
-                    
-                    available_end_times.append(time)
-                    
-                    # Ограничение максимального времени (до 03:00)
-                    current_hour = int(time.split(':')[0])
-                    if current_hour > 3 and current_hour < 12:
-                        break
-            
-        return available_end_times 
+        return available_times
+    
 
     async def get_best_table_and_end_times(self, date_str: str, start_time: str) -> tuple[int, list[str]]:
         data = await self.get_sheet_data()
-        if not data or len(data) < 2:
-            return None, []
         
-        # Находим индекс колонки с нужной датой
-        headers = data[0]
+        # Находим индекс строки с нужной датой
         target_date = datetime.strptime(date_str, '%d.%m.%y')
-        target_col_idx = None
+        target_row_idx = None
         
-        for idx, header in enumerate(headers[2:], start=2):
+        for idx in range(3, len(data), 4):  # Начинаем с 4-й строки, шаг 4 (каждая дата = 4 строки)
             try:
-                if header:
-                    header_date = datetime.strptime(header, '%d.%m')
-                    if (header_date.day == target_date.day and 
-                        header_date.month == target_date.month):
-                        target_col_idx = idx
+                date_cell = data[idx][0]  # Дата в первом столбце
+                if date_cell:
+                    row_date = datetime.strptime(date_cell, '%d.%m')
+                    if (row_date.day == target_date.day and 
+                        row_date.month == target_date.month):
+                        target_row_idx = idx
                         break
-            except ValueError:
+            except (ValueError, IndexError):
                 continue
         
-        print(f"target_col_idx: {target_col_idx}")
+        if target_row_idx is None:
+            return None, []
+
+        # Находим индекс колонки с начальным временем
+        time_slots = data[0][2:]  # Пропускаем первую ячейку (пустая или "Время")
+        target_col_idx = None
+        
+        for idx, time_slot in enumerate(time_slots, start=2):
+            if time_slot == start_time:
+                target_col_idx = idx
+                break
+
         if target_col_idx is None:
             return None, []
 
-        # Находим блок с начальным временем
-        start_row_idx = None
-        for i in range(3, len(data), 4):
-            if i + 4 > len(data):
-                break
-            
-            time_block = data[i:i+4]
-            if time_block[0][0] == start_time:
-                start_row_idx = i
-                break
-
-        print(f"start_row_idx: {start_row_idx}")
-        if start_row_idx is None:
-            return None, []
-
         available_tables = []  # список кортежей (номер_стола, количество_доступных_часов)
-        # Проверяем каждый стол (4 строки в блоке)
+        
+        # Проверяем каждый стол для выбранной даты
         for table_idx in range(4):
-            consecutive_hours = 0
-            current_row_idx = start_row_idx + table_idx
-            print(f"current_row_idx: {current_row_idx}")
-
-            # Проверяем последующие временные блоки для этого стола
-            row_offset = current_row_idx - start_row_idx  # смещение для конкретного стола
+            current_row_idx = target_row_idx + table_idx
             
             # Проверяем, свободен ли стол в начальное время
-            is_table_free = False
-            if len(data[current_row_idx]) <= target_col_idx:
-                is_table_free = True
-            elif data[current_row_idx][target_col_idx] == '':
-                is_table_free = True
-            
+            is_table_free = True 
+            if current_row_idx < len(data):
+                if target_col_idx < len(data[current_row_idx]):
+                    if data[current_row_idx][target_col_idx].strip() != '':
+                        is_table_free = False
             if is_table_free:
-                # Считаем, сколько последовательных часов доступно
-                for i in range(start_row_idx + 4, len(data), 4):
-                    if i + row_offset >= len(data):
-                        break
-                    
-                    if len(data[i + row_offset]) <= target_col_idx:
-                        consecutive_hours += 1
-                    elif data[i + row_offset][target_col_idx] == '':
+                consecutive_hours = 0
+                # Проверяем последующие временные слоты
+                for col_idx in range(target_col_idx, len(time_slots) + 2):
+                    if (len(data[current_row_idx]) <= col_idx or data[current_row_idx][col_idx] == ''):
                         consecutive_hours += 1
                     else:
                         break
-                    
-                    # Проверяем ограничение времени (до 03:00)
-                    time = data[i][0]
-                    current_hour = int(time.split(':')[0])
-                    if current_hour > 3 and current_hour < 12:
-                        break
                 
-                available_tables.append((table_idx + 1, consecutive_hours))
+                available_tables.append((table_idx+1, consecutive_hours))
         
         if not available_tables:
             return None, []
         
         # Выбираем стол с максимальным временем бронирования
         best_table, max_hours = max(available_tables, key=lambda x: x[1])
-        
         # Формируем список доступных времен окончания для выбранного стола
         available_end_times = []
-        for i in range(1, max_hours + 1):
-            row_idx = start_row_idx + (i * 4)
-            if row_idx < len(data):
-                available_end_times.append(data[row_idx][0])
+        for i in range(0, max_hours):
+            if target_col_idx + i < len(time_slots) + 1:
+                available_end_times.append(time_slots[target_col_idx + i - 1])
         
         return best_table, available_end_times 
+
+
+    async def update_booking_in_sheets(
+        self, 
+        date_str: str, 
+        start_time: str, 
+        end_time: str, 
+        table_id: int,
+        client_name: str,
+        client_phone: str
+    ) -> bool:
+        try:
+            data = await self.get_sheet_data()
+            
+            # Находим индекс строки с нужной датой
+            target_date = datetime.strptime(date_str, '%d.%m.%y')
+            target_row_idx = None
+            
+            for idx in range(3, len(data), 4):
+                try:
+                    date_cell = data[idx][0]
+                    if date_cell:
+                        row_date = datetime.strptime(date_cell, '%d.%m')
+                        if (row_date.day == target_date.day and 
+                            row_date.month == target_date.month):
+                            target_row_idx = idx
+                            break
+                except (ValueError, IndexError):
+                    continue
+            
+            if target_row_idx is None:
+                return False
+
+            # Находим индексы колонок для начального и конечного времени
+            time_slots = data[0][2:]
+            start_col_idx = None
+            end_col_idx = None
+            
+            for idx, time_slot in enumerate(time_slots, start=3):
+                if time_slot == start_time:
+                    start_col_idx = idx
+                elif time_slot == end_time:
+                    end_col_idx = idx
+                    break
+
+            if start_col_idx is None or end_col_idx is None:
+                return False
+
+            # Формируем значение для ячейки (имя и телефон)
+            cell_value = f"{client_name}\n{client_phone}"
+            
+            # Определяем диапазон ячеек для обновления
+            row_idx = target_row_idx + (table_id - 1)  # -1 так как table_id начинается с 1
+            range_start = f"{self._column_letter(start_col_idx)}{row_idx + 1}"
+            range_end = f"{self._column_letter(end_col_idx)}{row_idx + 1}"
+            range_name = f"{range_start}:{range_end}"
+
+            # Подготавливаем данные для обновления
+            values = [[cell_value] * (end_col_idx - start_col_idx + 1)]
+            
+            # Обновляем ячейки
+            self.sheet.values().update(
+                spreadsheetId=self.spreadsheet_id,
+                range=range_name,
+                valueInputOption='RAW',
+                body={'values': values}
+            ).execute()
+
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error updating booking in sheets: {e}")
+            return False
+
+    def _column_letter(self, column_number: int) -> str:
+        """Преобразует номер столбца в буквенное обозначение (1 -> A, 2 -> B, etc.)"""
+        result = ""
+        while column_number > 0:
+            column_number -= 1
+            result = chr(65 + (column_number % 26)) + result
+            column_number //= 26
+        return result
+
+    async def clear_booking_in_sheets(
+        self, 
+        date_str: str, 
+        start_time: str, 
+        end_time: str, 
+        table_id: int
+    ) -> bool:
+        try:
+            data = await self.get_sheet_data()
+            
+            # Находим индекс строки с нужной датой
+            target_date = datetime.strptime(date_str, '%d.%m.%y')
+            target_row_idx = None
+            
+            for idx in range(3, len(data), 4):
+                try:
+                    date_cell = data[idx][0]
+                    if date_cell:
+                        row_date = datetime.strptime(date_cell, '%d.%m')
+                        if (row_date.day == target_date.day and 
+                            row_date.month == target_date.month):
+                            target_row_idx = idx + (table_id - 1)
+                            break
+                except (ValueError, IndexError):
+                    continue
+            
+            if target_row_idx is None:
+                return False
+
+            # Нормализуем форматы времени
+            def normalize_time(time_str: str) -> str:
+                try:
+                    # Преобразуем строку времени в объект time и обратно в строку
+                    time_obj = datetime.strptime(time_str, '%H:%M').time()
+                    return time_obj.strftime('%-H:%M')  # %-H уберет ведущий ноль
+                except ValueError:
+                    return time_str
+
+            # Находим индексы колонок для начального и конечного времени
+            time_slots = data[0][2:]
+            start_col_idx = None
+            end_col_idx = None
+            
+            normalized_end_time = normalize_time(end_time)
+            normalized_start_time = normalize_time(start_time)
+            
+            for idx, time_slot in enumerate(time_slots, start=3):
+                normalized_slot = normalize_time(time_slot)
+                if normalized_slot == normalized_start_time:
+                    start_col_idx = idx
+                elif normalized_slot == normalized_end_time:
+                    end_col_idx = idx
+                    break
+                
+            if start_col_idx is None or end_col_idx is None:
+                return False
+            
+            # Очищаем ячейки
+            range_name = f"{self._column_letter(start_col_idx)}{target_row_idx + 1}:{self._column_letter(end_col_idx)}{target_row_idx + 1}"
+            
+            # Используем пустые значения для очистки ячеек
+            self.sheet.values().update(
+                spreadsheetId=self.spreadsheet_id,
+                range=range_name,
+                valueInputOption='RAW',
+                body={'values': [['']*((end_col_idx - start_col_idx) + 1)]}
+            ).execute()
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error clearing booking in sheets: {e}")
+            return False
