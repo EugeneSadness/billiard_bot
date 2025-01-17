@@ -227,11 +227,11 @@ class GoogleSheetsService:
             # Определяем диапазон ячеек для обновления
             row_idx = target_row_idx + (table_id - 1)  # -1 так как table_id начинается с 1
             range_start = f"{self._column_letter(start_col_idx)}{row_idx + 1}"
-            range_end = f"{self._column_letter(end_col_idx)}{row_idx + 1}"
+            range_end = f"{self._column_letter(end_col_idx - 1)}{row_idx + 1}"  # Уменьшаем end_col_idx на 1
             range_name = f"{range_start}:{range_end}"
 
             # Подготавливаем данные для обновления
-            values = [[cell_value] * (end_col_idx - start_col_idx + 1)]
+            values = [[cell_value] * (end_col_idx - start_col_idx)]  # Убираем +1 из расчета количества ячеек
             
             # Обновляем ячейки, сохраняя форматирование
             self.sheet.values().update(

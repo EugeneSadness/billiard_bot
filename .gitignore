@@ -166,3 +166,5 @@ poetry.lock
 /pgadmin-data/
 
 cred.json
+
+env.py
