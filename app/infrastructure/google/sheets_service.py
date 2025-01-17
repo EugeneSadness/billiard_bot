@@ -46,7 +46,7 @@ class GoogleSheetsService:
                         break
                     # Проверяем ячейки времени (начиная с индекса 1, пропуская название стола)
                     for time_idx in range(1, len(current_row)):
-                        if current_row[time_idx].strip() == '' or len(current_row) < 15:
+                        if current_row[time_idx].strip() == '' or len(current_row) < 14:
                             has_free_slots = True
                             break
                     if has_free_slots:
@@ -64,12 +64,16 @@ class GoogleSheetsService:
                 
         return available_dates
 
+    def _extract_start_time(self, time_slot: str) -> str:
+        """Extract start time from time slot (e.g., '15:00-16:00' -> '15:00')"""
+        return time_slot.split('-')[0].strip()
+
     async def get_available_times(self, selected_date: str, table_preference: str = 'random') -> list:
         data = await self.get_sheet_data()
         available_times = []
         
         # Получаем строку с временем (первая строка)
-        time_slots = data[0][2:14]  # Пропускаем первые две ячейки
+        time_slots = data[0][2:13]  # Пропускаем первые две ячейки
         
         # Ищем индекс строки с выбранной датой
         date_row_idx = None
@@ -93,13 +97,13 @@ class GoogleSheetsService:
                         has_free_tables = True
                         break
                 if has_free_tables:
-                    available_times.append(time_slot)
+                    available_times.append(self._extract_start_time(time_slot))
             else:
                 # Проверяем только выбранный стол
                 table_idx = int(table_preference) - 1
                 current_row = data[date_row_idx + table_idx]
                 if len(current_row) <= time_idx or current_row[time_idx].strip() == '':
-                    available_times.append(time_slot)
+                    available_times.append(self._extract_start_time(time_slot))
                 
         return available_times
     
@@ -111,9 +115,9 @@ class GoogleSheetsService:
         target_date = datetime.strptime(date_str, '%d.%m.%y')
         target_row_idx = None
         
-        for idx in range(3, len(data), 4):  # Начинаем с 4-й строки, шаг 4 (каждая дата = 4 строки)
+        for idx in range(3, len(data), 4):
             try:
-                date_cell = data[idx][0]  # Дата в первом столбце
+                date_cell = data[idx][0]
                 if date_cell:
                     row_date = datetime.strptime(date_cell, '%d.%m')
                     if (row_date.day == target_date.day and 
@@ -131,7 +135,7 @@ class GoogleSheetsService:
         target_col_idx = None
         
         for idx, time_slot in enumerate(time_slots, start=2):
-            if time_slot == start_time:
+            if self._extract_start_time(time_slot) == start_time:
                 target_col_idx = idx
                 break
 
@@ -170,9 +174,10 @@ class GoogleSheetsService:
         available_end_times = []
         for i in range(0, max_hours):
             if target_col_idx + i < len(time_slots) + 1:
-                available_end_times.append(time_slots[target_col_idx + i - 1])
+                end_time = time_slots[target_col_idx + i].split('-')[1].strip()
+                available_end_times.append(end_time)
         
-        return best_table, available_end_times 
+        return best_table, available_end_times
 
 
     async def update_booking_in_sheets(
@@ -366,7 +371,7 @@ class GoogleSheetsService:
                     range=range_name,
                     valueInputOption='USER_ENTERED',
                     includeValuesInResponse=True,
-                    body={'values': [['BLOCKED'] * 13]}  # 13 временных слотов
+                    body={'values': [['BLOCKED'] * 12]}  # 12 временных слотов
                 ).execute()
             
             return True
@@ -409,7 +414,7 @@ class GoogleSheetsService:
                     range=range_name,
                     valueInputOption='USER_ENTERED',
                     includeValuesInResponse=True,
-                    body={'values': [['']*13]}  # 13 пустых временных слотов
+                    body={'values': [['']*12]}  # 12 пустых временных слотов
                 ).execute()
             
             return True
@@ -445,7 +450,7 @@ class GoogleSheetsService:
         start_col_idx = None
         
         for idx, time_slot in enumerate(time_slots, start=2):
-            if time_slot == start_time:
+            if self._extract_start_time(time_slot) == start_time:
                 start_col_idx = idx
                 break
             
@@ -459,7 +464,8 @@ class GoogleSheetsService:
         for col_idx in range(start_col_idx, len(time_slots) + 2):
             if col_idx >= len(current_row) or current_row[col_idx].strip() == '':
                 if col_idx - 1 < len(time_slots):
-                    available_end_times.append(time_slots[col_idx - 1])
+                    end_time = time_slots[col_idx - 1].split('-')[1].strip()
+                    available_end_times.append(end_time)
             else:
                 break
             
