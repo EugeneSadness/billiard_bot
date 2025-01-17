@@ -23,7 +23,6 @@ from app.schemas.booking import BookingFilter, BookingStatus
 
 admin_router = Router()
 logger = getLogger(__name__)
-# Регистрируем фильтр админа
 admin_router.callback_query.filter(IsAdmin())
 admin_router.message.filter(IsAdmin())
 

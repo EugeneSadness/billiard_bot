@@ -123,6 +123,10 @@ def get_admin_menu_inline_keyboard() -> InlineKeyboardMarkup:
         callback_data="block_day"
     )
     builder.button(
+        text="Разблокировать день 🔓",
+        callback_data="unblock_day"
+    )
+    builder.button(
         text="Управление бронями 👥",
         callback_data="manage_bookings"
     )
@@ -134,9 +138,9 @@ def get_all_bookings_keyboard(bookings: list[Booking]) -> InlineKeyboardMarkup:
     
     for booking in bookings:
         date_str, weekday_ru = format_date_with_weekday(booking.booking_date.strftime('%d.%m.%y'))
+        
         button_text = (
-            f"{booking.client_name} ({booking.client_phone})\n"
-            f"{date_str} ({weekday_ru}) "
+            f"{booking.client_name} {date_str}\n"
             f"{booking.start_time.strftime('%H:%M')}-{booking.end_time.strftime('%H:%M')}"
         )
         builder.button(
@@ -159,4 +163,37 @@ def get_back_to_admin_menu_keyboard() -> InlineKeyboardMarkup:
         callback_data="back_to_main"
     )
     builder.adjust(1)
+    return builder.as_markup()
+
+def get_table_preference_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    
+    # Порядок кнопок соответствует предпочтениям пользователя
+    builder.button(
+        text="Любой стол 🎱",
+        callback_data="table_pref:random"
+    )
+    builder.button(
+        text="Красный стол ❤️",
+        callback_data="table_pref:4"
+    )
+    builder.button(
+        text="Зелёный стол 💚",
+        callback_data="table_pref:3"
+    )
+    builder.button(
+        text="Леопардовый стол 🐆",
+        callback_data="table_pref:1"
+    )
+    builder.button(
+        text="Синий стол 💙",
+        callback_data="table_pref:2"
+    )
+    
+    builder.button(
+        text="« Назад к выбору даты",
+        callback_data="back_to_dates"
+    )
+    
+    builder.adjust(1)  # По одной кнопке в ряд
     return builder.as_markup() 

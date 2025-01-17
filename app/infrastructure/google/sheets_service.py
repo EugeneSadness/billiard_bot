@@ -64,12 +64,13 @@ class GoogleSheetsService:
                 
         return available_dates
 
-    async def get_available_times(self, selected_date: str) -> list:
+    async def get_available_times(self, selected_date: str, table_preference: str = 'random') -> list:
         data = await self.get_sheet_data()
         available_times = []
-            
+        
         # Получаем строку с временем (первая строка)
-        time_slots = data[0][2:14]  # Пропускаем первую ячейку (там "Время")
+        time_slots = data[0][2:14]  # Пропускаем первые две ячейки
+        
         # Ищем индекс строки с выбранной датой
         date_row_idx = None
         for idx in range(3, len(data), 4):
@@ -77,22 +78,28 @@ class GoogleSheetsService:
             if data[idx][0].strip() == selected_date:
                 date_row_idx = idx
                 break
-                
+            
         if date_row_idx is None:
             return available_times
             
         # Проверяем доступность каждого временного слота
-        for time_idx, time_slot in enumerate(time_slots, start=2):  
-            # Проверяем все столы для этого времени
-            has_free_tables = False
-            for table_idx in range(4):
+        for time_idx, time_slot in enumerate(time_slots, start=2):
+            if table_preference == 'random':
+                # Проверяем все столы
+                has_free_tables = False
+                for table_idx in range(4):
+                    current_row = data[date_row_idx + table_idx]
+                    if len(current_row) <= time_idx or current_row[time_idx].strip() == '':
+                        has_free_tables = True
+                        break
+                if has_free_tables:
+                    available_times.append(time_slot)
+            else:
+                # Проверяем только выбранный стол
+                table_idx = int(table_preference) - 1
                 current_row = data[date_row_idx + table_idx]
-                if len(current_row) <= time_idx or (len(current_row) > time_idx and current_row[time_idx].strip() == ''):
-                    has_free_tables = True
-                    break
-
-            if has_free_tables:
-                available_times.append(time_slot)
+                if len(current_row) <= time_idx or current_row[time_idx].strip() == '':
+                    available_times.append(time_slot)
                 
         return available_times
     
@@ -226,11 +233,12 @@ class GoogleSheetsService:
             # Подготавливаем данные для обновления
             values = [[cell_value] * (end_col_idx - start_col_idx + 1)]
             
-            # Обновляем ячейки
+            # Обновляем ячейки, сохраняя форматирование
             self.sheet.values().update(
                 spreadsheetId=self.spreadsheet_id,
                 range=range_name,
-                valueInputOption='RAW',
+                valueInputOption='USER_ENTERED',
+                includeValuesInResponse=True,
                 body={'values': values}
             ).execute()
 
@@ -313,7 +321,8 @@ class GoogleSheetsService:
             self.sheet.values().update(
                 spreadsheetId=self.spreadsheet_id,
                 range=range_name,
-                valueInputOption='RAW',
+                valueInputOption='USER_ENTERED',
+                includeValuesInResponse=True,
                 body={'values': [['']*((end_col_idx - start_col_idx) + 1)]}
             ).execute()
             
@@ -355,7 +364,8 @@ class GoogleSheetsService:
                 self.sheet.values().update(
                     spreadsheetId=self.spreadsheet_id,
                     range=range_name,
-                    valueInputOption='RAW',
+                    valueInputOption='USER_ENTERED',
+                    includeValuesInResponse=True,
                     body={'values': [['BLOCKED'] * 13]}  # 13 временных слотов
                 ).execute()
             
@@ -364,3 +374,93 @@ class GoogleSheetsService:
         except Exception as e:
             logger.error(f"Error blocking day in sheets: {e}")
             return False
+
+    async def unblock_day_in_sheets(self, date_str: str) -> bool:
+        try:
+            data = await self.get_sheet_data()
+            
+            # Находим индекс строки с нужной датой
+            target_date = datetime.strptime(date_str, '%d.%m.%y')
+            target_row_idx = None
+            
+            for idx in range(3, len(data), 4):
+                try:
+                    date_cell = data[idx][0]
+                    if date_cell:
+                        row_date = datetime.strptime(date_cell, '%d.%m')
+                        if (row_date.day == target_date.day and 
+                            row_date.month == target_date.month):
+                            target_row_idx = idx
+                            break
+                except (ValueError, IndexError):
+                    continue
+            
+            if target_row_idx is None:
+                return False
+
+            # Очищаем все ячейки для всех столов на этот день
+            for table_idx in range(4):
+                row_idx = target_row_idx + table_idx
+                range_name = f"C{row_idx + 1}:O{row_idx + 1}"  # От C до O (все временные слоты)
+                
+                # Используем пустые значения для очистки ячеек
+                self.sheet.values().update(
+                    spreadsheetId=self.spreadsheet_id,
+                    range=range_name,
+                    valueInputOption='USER_ENTERED',
+                    includeValuesInResponse=True,
+                    body={'values': [['']*13]}  # 13 пустых временных слотов
+                ).execute()
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error unblocking day in sheets: {e}")
+            return False
+
+    async def get_available_end_times_for_table(self, date_str: str, start_time: str, table_id: int) -> list[str]:
+        data = await self.get_sheet_data()
+        
+        # Ищем строку для выбранной даты и стола
+        target_date = datetime.strptime(date_str, '%d.%m.%y')
+        target_row_idx = None
+        
+        for idx in range(3, len(data), 4):
+            try:
+                date_cell = data[idx][0]
+                if date_cell:
+                    row_date = datetime.strptime(date_cell, '%d.%m')
+                    if (row_date.day == target_date.day and 
+                        row_date.month == target_date.month):
+                        target_row_idx = idx + (table_id - 1)  # Корректируем для конкретного стола
+                        break
+            except (ValueError, IndexError):
+                continue
+            
+        if target_row_idx is None:
+            return []
+
+        # Ищем колонку времени начала
+        time_slots = data[0][2:]
+        start_col_idx = None
+        
+        for idx, time_slot in enumerate(time_slots, start=2):
+            if time_slot == start_time:
+                start_col_idx = idx
+                break
+            
+        if start_col_idx is None:
+            return []
+
+        # Проверяем последовательные доступные слоты
+        available_end_times = []
+        current_row = data[target_row_idx]
+        
+        for col_idx in range(start_col_idx, len(time_slots) + 2):
+            if col_idx >= len(current_row) or current_row[col_idx].strip() == '':
+                if col_idx - 1 < len(time_slots):
+                    available_end_times.append(time_slots[col_idx - 1])
+            else:
+                break
+            
+        return available_end_times

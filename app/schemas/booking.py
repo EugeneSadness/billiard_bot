@@ -28,7 +28,7 @@ class BookingResponse(BookingBase):
     id: int
     created_at: datetime
     status: BookingStatus = Field(default=BookingStatus.ACTIVE)
-    table_name: str | None = None  # Добавляем имя стола для удобства
+    table_name: str | None = None 
 
     class Config:
         from_attributes = True

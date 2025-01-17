@@ -36,7 +36,7 @@ async def notify(context: Context = TaskiqDepends()) -> None:
     print("Оповещение!")
 
 
-@broker.task(task_name="update_past_bookings", schedule=[{"cron": "0 3 * * *"}])  # Run at 3 AM MSK daily
+@broker.task(task_name="update_past_bookings", schedule=[{"cron": "0 3 * * *"}]) 
 async def update_past_bookings(context: Context = TaskiqDepends()) -> None:
     try:
         # Create database session

@@ -4,6 +4,7 @@ class BookingStates(StatesGroup):
     waiting_for_action = State()
     waiting_for_name = State()
     waiting_for_date = State()
+    waiting_for_table_preference = State()
     waiting_for_start_time = State()
     waiting_for_end_time = State()
     waiting_for_phone = State()

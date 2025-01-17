@@ -18,7 +18,8 @@ from app.tgbot.keyboards.booking import (
     get_end_time_keyboard,
     get_main_menu_inline_keyboard, 
     get_cancel_booking_keyboard, 
-    get_admin_menu_inline_keyboard
+    get_admin_menu_inline_keyboard,
+    get_table_preference_keyboard
 )
 from app.tgbot.states.booking import BookingStates
 from app.tgbot.utils.booking import get_available_dates, get_available_times
@@ -64,7 +65,8 @@ async def handle_booking_callback(
     else:
         await state.set_state(BookingStates.waiting_for_name)
         await callback.message.edit_text(
-            "Отлично! Давай я помогу тебе, и мы вместе сделаем это\n\n"
+            "Отлично! \n\n"
+            "Давай я помогу тебе, и мы вместе сделаем это\n\n"
             "Как твоё имя, дорогуша?"
         )
 
@@ -117,15 +119,49 @@ async def process_date(
         
     selected_date = callback.data.replace('date_', '')
     await state.update_data(selected_date=selected_date)
+
+    state_data = await state.get_data()
+    is_admin = state_data.get('is_admin', False)
+    if is_admin:
+        await state.set_state(BookingStates.waiting_for_table_preference)
+        await callback.message.edit_text(
+            "За каким столом будет клиент?",
+            reply_markup=get_table_preference_keyboard()
+        )
+    else:
+        # Вместо перехода к выбору времени, спрашиваем о предпочтительном столе
+        await state.set_state(BookingStates.waiting_for_table_preference)
+        await callback.message.edit_text(
+            "За каким столом предпочитаешь играть, дорогуша? 😊",
+            reply_markup=get_table_preference_keyboard()
+        )
+
+# Новый обработчик для выбора стола
+@booking_router.callback_query(BookingStates.waiting_for_table_preference)
+async def process_table_preference(
+    callback: CallbackQuery,
+    state: FSMContext,
+    sheets_service: GoogleSheetsService
+):
+    if callback.data == "back_to_dates":
+        await back_to_dates(callback, state, sheets_service)
+        return
+
+    table_pref = callback.data.replace('table_pref:', '')
+    await state.update_data(table_preference=table_pref)
     
-    available_times = await get_available_times(sheets_service, selected_date)
-    user_data = await state.get_data()
-    is_admin = user_data.get('is_admin', False)
+    # Получаем данные о дате из состояния
+    state_data = await state.get_data()
+    selected_date = state_data['selected_date']
+    
+    # Получаем доступное время с учетом предпочтительного стола
+    available_times = await get_available_times(sheets_service, selected_date, table_pref)
     
     if not available_times:
         await callback.message.edit_text(
-            "Извини, но на этот день все часы заняты! Выбери другой день:",
-            reply_markup=get_admin_menu_inline_keyboard() if is_admin else get_main_menu_inline_keyboard()
+            "Извини, но на этот день все часы для выбранного стола заняты! "
+            "Попробуй выбрать другой стол или день:",
+            reply_markup=get_table_preference_keyboard()
         )
         return
         
@@ -141,7 +177,6 @@ async def process_start_time(
     state: FSMContext,
     sheets_service: GoogleSheetsService
 ):
-    # Проверяем навигационные команды
     if callback.data == "back_to_dates":
         await back_to_dates(callback, state, sheets_service)
         return
@@ -149,11 +184,24 @@ async def process_start_time(
     start_time = callback.data.replace('time:', '')
     state_data = await state.get_data()
     is_admin = state_data.get('is_admin', False)
+    table_preference = state_data.get('table_preference')
     
-    best_table, available_end_times = await sheets_service.get_best_table_and_end_times(
-        state_data['selected_date'],
-        start_time
-    )
+    
+    if table_preference == 'random':
+        best_table, available_end_times = await sheets_service.get_best_table_and_end_times(
+            state_data['selected_date'],
+            start_time
+        )
+    else:
+        # Преобразуем строку с номером стола в число
+        requested_table = int(table_preference)
+        # Проверяем доступность конкретного стола
+        available_end_times = await sheets_service.get_available_end_times_for_table(
+            state_data['selected_date'],
+            start_time,
+            requested_table
+        )
+        best_table = requested_table if available_end_times else None
     
     if not best_table or not available_end_times:
         await callback.message.edit_text(
@@ -492,4 +540,77 @@ async def handle_booking_cancellation(
     )
     
     await state.set_state(BookingStates.waiting_for_action)
+
+@booking_router.callback_query(lambda c: c.data == "unblock_day")
+async def handle_unblock_day(
+    callback: CallbackQuery,
+    state: FSMContext,
+    sheets_service: GoogleSheetsService
+):
+    # Получаем доступные даты (все даты из таблицы)
+    data = await sheets_service.get_sheet_data()
+    available_dates = []
+    
+    if not data or len(data) < 3:
+        await callback.message.edit_text(
+            "Не удалось получить даты из таблицы.",
+            reply_markup=get_admin_menu_inline_keyboard()
+        )
+        return
+        
+    # Получаем все даты из первого столбца
+    for idx in range(3, len(data), 4):
+        try:
+            date_cell = data[idx][0]
+            if date_cell and date_cell.strip():
+                date = datetime.strptime(date_cell, '%d.%m')
+                date = date.replace(year=datetime.now().year)
+                available_dates.append({
+                    'date': date.strftime('%d.%m.%y'),
+                    'weekday': date.strftime('%A')
+                })
+        except (ValueError, AttributeError):
+            continue
+    
+    if not available_dates:
+        await callback.message.edit_text(
+            "Нет доступных дат для разблокировки.",
+            reply_markup=get_admin_menu_inline_keyboard()
+        )
+        return
+
+    await state.set_state(BookingStates.waiting_for_block_day)
+    await state.update_data(action='unblock')  # Сохраняем действие для различения блокировки/разблокировки
+    await callback.message.edit_text(
+        "Выберите день для разблокировки:",
+        reply_markup=get_dates_keyboard(available_dates, is_admin=True)
+    )
+
+@booking_router.callback_query(BookingStates.waiting_for_block_day)
+async def process_block_unblock_day(
+    callback: CallbackQuery,
+    state: FSMContext,
+    sheets_service: GoogleSheetsService
+):
+    if callback.data == "back_to_main":
+        await back_to_main(callback, state)
+        return
+
+    state_data = await state.get_data()
+    action = state_data.get('action', 'block')  # По умолчанию блокировка
+    selected_date = callback.data.replace('date_', '')
+    
+    success = False
+    if action == 'block':
+        success = await sheets_service.block_day_in_sheets(selected_date)
+        message = "День успешно заблокирован!" if success else "Не удалось заблокировать день."
+    else:  # unblock
+        success = await sheets_service.unblock_day_in_sheets(selected_date)
+        message = "День успешно разблокирован!" if success else "Не удалось разблокировать день."
+
+    await state.set_state(BookingStates.waiting_for_action)
+    await callback.message.edit_text(
+        message,
+        reply_markup=get_admin_menu_inline_keyboard()
+    )
 

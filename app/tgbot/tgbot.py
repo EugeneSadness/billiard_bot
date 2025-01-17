@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 async def create_db_session():
     # Создаем URL для подключения к БД
-    database_url = f"postgresql+psycopg://{settings.postgres_user}:{settings.postgres_password}@{settings.postgres_host}:{settings.postgres.port}/{settings.postgres_db}"
+    database_url = f"postgresql+psycopg://{settings.postgres_user}:{settings.postgres_password}@{settings.postgres.host}:{settings.postgres.port}/{settings.postgres_db}"
 
     
     # Создаем движок SQLAlchemy
