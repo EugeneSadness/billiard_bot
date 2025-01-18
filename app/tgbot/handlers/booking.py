@@ -399,7 +399,8 @@ async def back_to_start_time(
     sheets_service: GoogleSheetsService
 ):
     state_data = await state.get_data()
-    available_times = await get_available_times(sheets_service, state_data['selected_date'])
+    table_pref = state_data.get('table_preference', 'random')  # Get the stored table preference
+    available_times = await get_available_times(sheets_service, state_data['selected_date'], table_pref)
     
     await state.set_state(BookingStates.waiting_for_start_time)
     # Получаем данные о статусе админа для кнопки "назад"

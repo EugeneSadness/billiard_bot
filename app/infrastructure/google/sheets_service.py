@@ -17,7 +17,18 @@ class GoogleSheetsService:
             range='A1:O39'  # Увеличиваем диапазон для новой структуры
         ).execute()
         return result.get('values', [])
+
+    def get_first_time(self, time_str: str) -> str:
+        if '-' in time_str:
+            return time_str.split('-')[0].strip()
+        return time_str.strip()
         
+
+    def get_last_time(self, time_str: str) -> str:
+        if '-' in time_str:
+            return time_str.split('-')[1].strip()
+        return time_str.strip()
+
     async def get_available_dates(self) -> list:
         data = await self.get_sheet_data()
         available_dates = []
@@ -69,7 +80,8 @@ class GoogleSheetsService:
         available_times = []
         
         # Получаем строку с временем (первая строка)
-        time_slots = data[0][2:13]  # Пропускаем первые две ячейки
+        time_slots = [self.get_first_time(time_slot) for time_slot in data[0][2:14]]  # Пропускаем первые две ячейки
+        print(time_slots)
         
         # Ищем индекс строки с выбранной датой
         date_row_idx = None
@@ -127,7 +139,8 @@ class GoogleSheetsService:
             return None, []
 
         # Находим индекс колонки с начальным временем
-        time_slots = data[0][2:]  # Пропускаем первую ячейку (пустая или "Время")
+        time_slots = [self.get_first_time(time_slot) for time_slot in data[0][2:14]]  # Пропускаем первую ячейку (пустая или "Время")
+        time_slots_end = [self.get_last_time(time_slot) for time_slot in data[0][2:14]]
         target_col_idx = None
         
         for idx, time_slot in enumerate(time_slots, start=2):
@@ -135,6 +148,7 @@ class GoogleSheetsService:
                 target_col_idx = idx
                 break
 
+        print(f"target_col_idx: {target_col_idx}")
         if target_col_idx is None:
             return None, []
 
@@ -143,7 +157,7 @@ class GoogleSheetsService:
         # Проверяем каждый стол для выбранной даты
         for table_idx in range(4):
             current_row_idx = target_row_idx + table_idx
-            
+            print(f"current_row_idx: {current_row_idx}")
             # Проверяем, свободен ли стол в начальное время
             is_table_free = True 
             if current_row_idx < len(data):
@@ -164,13 +178,14 @@ class GoogleSheetsService:
         if not available_tables:
             return None, []
         
+        print(f"consecutive_hours: {consecutive_hours}")
         # Выбираем стол с максимальным временем бронирования
         best_table, max_hours = max(available_tables, key=lambda x: x[1])
         # Формируем список доступных времен окончания для выбранного стола
         available_end_times = []
         for i in range(0, max_hours):
-            if target_col_idx + i < len(time_slots) + 1:
-                available_end_times.append(time_slots[target_col_idx + i - 1])
+            if target_col_idx -2 + i < len(time_slots):
+                available_end_times.append(time_slots_end[target_col_idx + i - 2])
         
         return best_table, available_end_times 
 
@@ -207,16 +222,16 @@ class GoogleSheetsService:
                 return False
 
             # Находим индексы колонок для начального и конечного времени
-            time_slots = data[0][2:]
+            time_slots = [self.get_first_time(time_slot) for time_slot in data[0][2:14]]
+            time_slots_end = [self.get_last_time(time_slot) for time_slot in data[0][2:14]]
             start_col_idx = None
             end_col_idx = None
             
-            for idx, time_slot in enumerate(time_slots, start=3):
-                if time_slot == start_time:
+            for idx, (start, end) in enumerate(zip(time_slots, time_slots_end), start=3):
+                if start == start_time:
                     start_col_idx = idx
-                elif time_slot == end_time:
+                if end == end_time:
                     end_col_idx = idx
-                    break
 
             if start_col_idx is None or end_col_idx is None:
                 return False
@@ -227,11 +242,11 @@ class GoogleSheetsService:
             # Определяем диапазон ячеек для обновления
             row_idx = target_row_idx + (table_id - 1)  # -1 так как table_id начинается с 1
             range_start = f"{self._column_letter(start_col_idx)}{row_idx + 1}"
-            range_end = f"{self._column_letter(end_col_idx - 1)}{row_idx + 1}"  # Уменьшаем end_col_idx на 1
+            range_end = f"{self._column_letter(end_col_idx)}{row_idx + 1}"
             range_name = f"{range_start}:{range_end}"
 
             # Подготавливаем данные для обновления
-            values = [[cell_value] * (end_col_idx - start_col_idx)]  # Убираем +1 из расчета количества ячеек
+            values = [[cell_value] * (end_col_idx - start_col_idx + 1)]  # Убираем +1 из расчета количества ячеек
             
             # Обновляем ячейки, сохраняя форматирование
             self.sheet.values().update(
@@ -286,30 +301,18 @@ class GoogleSheetsService:
             if target_row_idx is None:
                 return False
 
-            # Нормализуем форматы времени
-            def normalize_time(time_str: str) -> str:
-                try:
-                    # Преобразуем строку времени в объект time и обратно в строку
-                    time_obj = datetime.strptime(time_str, '%H:%M').time()
-                    return time_obj.strftime('%-H:%M')  # %-H уберет ведущий ноль
-                except ValueError:
-                    return time_str
-
             # Находим индексы колонок для начального и конечного времени
-            time_slots = data[0][2:]
+            time_slots = [self.get_first_time(slot) for slot in data[0][2:14]]
+            time_slots_end = [self.get_last_time(slot) for slot in data[0][2:14]]
             start_col_idx = None
             end_col_idx = None
             
-            normalized_end_time = normalize_time(end_time)
-            normalized_start_time = normalize_time(start_time)
-            
-            for idx, time_slot in enumerate(time_slots, start=3):
-                normalized_slot = normalize_time(time_slot)
-                if normalized_slot == normalized_start_time:
+            # Изменяем логику поиска индексов
+            for idx, (start, end) in enumerate(zip(time_slots, time_slots_end), start=3):
+                if start == start_time:
                     start_col_idx = idx
-                elif normalized_slot == normalized_end_time:
+                if end == end_time:  # Убираем elif для независимой проверки
                     end_col_idx = idx
-                    break
                 
             if start_col_idx is None or end_col_idx is None:
                 return False
@@ -441,7 +444,8 @@ class GoogleSheetsService:
             return []
 
         # Ищем колонку времени начала
-        time_slots = data[0][2:]
+        time_slots = [self.get_first_time(time_slot) for time_slot in data[0][2:14]]
+        time_slots_end = [self.get_last_time(time_slot) for time_slot in data[0][2:14]]
         start_col_idx = None
         
         for idx, time_slot in enumerate(time_slots, start=2):
@@ -458,8 +462,9 @@ class GoogleSheetsService:
         
         for col_idx in range(start_col_idx, len(time_slots) + 2):
             if col_idx >= len(current_row) or current_row[col_idx].strip() == '':
-                if col_idx - 1 < len(time_slots):
-                    available_end_times.append(time_slots[col_idx - 1])
+                print(f"col_idx: {col_idx}, len(current_row): {len(current_row)}, current_row: {current_row}")
+                if col_idx - 2 < len(time_slots):
+                    available_end_times.append(time_slots_end[col_idx - 2])
             else:
                 break
             
