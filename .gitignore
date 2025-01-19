@@ -168,3 +168,5 @@ poetry.lock
 cred.json
 
 env.py
+
+nginx/

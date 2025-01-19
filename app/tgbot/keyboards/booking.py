@@ -18,6 +18,14 @@ def get_main_menu_inline_keyboard() -> InlineKeyboardMarkup:
         text="Отменить бронь ❌",
         callback_data="cancel_booking"
     )
+    builder.button(
+        text="Как пройти к нам 🗺️",
+        callback_data="how_to_find_us"
+    )
+    builder.button(
+        text="Контактная информация ℹ️",
+        callback_data="contact_info"
+    )
     builder.adjust(1)  # По одной кнопке в ряд
     return builder.as_markup()
 

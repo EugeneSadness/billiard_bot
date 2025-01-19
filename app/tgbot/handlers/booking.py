@@ -4,7 +4,7 @@ from logging import getLogger
 from aiogram import Router
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 
 from app.tgbot.handlers.admin import handle_admin_booking
 from app.tgbot.handlers.navigation import back_to_main
@@ -36,9 +36,9 @@ async def start_cmd(message: Message, state: FSMContext):
     is_admin = message.from_user.username == settings.ADMIN_NAME
     
     await message.answer(
-        "Привет, дорогуша!\n\n"
-        "Я вирт. помощник Анжелла\n\n"
-        "Расскажи, как и что ты хочешь",
+        "Привет, дорогуша 🩷\n\n"
+        "Я вирт. помощник Анжелла🍓\n\n"
+        "Расскажи, как и что ты хочешь?",
         reply_markup=get_admin_menu_inline_keyboard() if is_admin else get_main_menu_inline_keyboard(),
     )
 
@@ -66,7 +66,7 @@ async def handle_booking_callback(
         await state.set_state(BookingStates.waiting_for_name)
         await callback.message.edit_text(
             "Отлично! \n\n"
-            "Давай я помогу тебе, и мы вместе сделаем это\n\n"
+            "Давай я помогу тебе, и мы вместе сделаем это 💋\n\n"
             "Как твоё имя, дорогуша?"
         )
 
@@ -103,7 +103,7 @@ async def process_name(
         
     await state.set_state(BookingStates.waiting_for_date)
     await message.answer(
-        f"Приятно познакомиться, {name}!\n\nВыбери день:",
+        f"Приятно познакомиться, {name}!🫶\n\nВыбери день:",
         reply_markup=get_dates_keyboard(available_dates)
     )
 
@@ -132,7 +132,8 @@ async def process_date(
         # Вместо перехода к выбору времени, спрашиваем о предпочтительном столе
         await state.set_state(BookingStates.waiting_for_table_preference)
         await callback.message.edit_text(
-            "За каким столом предпочитаешь играть, дорогуша? 😊",
+            f"За каким столом предпочитаешь сделать это, {state_data['client_name']}? 😼\n\n"
+            f"(Цена удовольствия составляет всего 1200 руб./час)",
             reply_markup=get_table_preference_keyboard()
         )
 
@@ -167,7 +168,7 @@ async def process_table_preference(
         
     await state.set_state(BookingStates.waiting_for_start_time)
     await callback.message.edit_text(
-        "Выбери, с которого часа начнём:",
+        "Выбери, с которого часа начнём удовольствия:",
         reply_markup=get_time_keyboard(available_times)
     )
 
@@ -217,7 +218,7 @@ async def process_start_time(
     
     await state.set_state(BookingStates.waiting_for_end_time)
     await callback.message.edit_text(
-        "Выбери, до которого часа играем:",
+        "Выбери, когда заканчиваем наши игры:",
         reply_markup=get_end_time_keyboard(available_end_times)
     )
 
@@ -335,7 +336,38 @@ async def process_booking(
             f"Время наслаждений забронировано с {booking_data['start_time']} "
             f"до {booking_data['end_time']}, "
             f"{date_str} ({weekday_ru}), "
-            f"жду тебя в The Feel's 🩷"
+            f"жду тебя в The Feel's 🩷\n\n"
+            "Пожалуйста, ознакомься с правилами нашей игры 🙌"
+        )
+        
+        await message.answer(
+            "Правила нашего бильярдного клуба 🩷\n\n"
+            "+ пожалуйста, бери кии только рядом со своим столом, и три их мелком цвета, "
+            "соответствующего цвету сукна. Другой цвет мела оставляет следы 💦\n\n"
+            "+ пожалуйста, не ставь напитки на сукно и борты стола, чтобы случайно не пролить. "
+            "За пролитие напитков на стол придётся внести 3000 руб. взноса за хим. чистку.\n"
+            "(Если интересно, то перетянуть новое сукно стоит 25 000 руб.) 💵\n\n"
+            "+ пожалуйста, приходи во время, столик принадлежит тебе на всё время брони, "
+            "а другим мы отказываем. Поэтому, если вы пришли позже, стоить он будет "
+            "соответственно забронированному времени ⏰"
+        )
+        
+        await message.answer(
+            "Хэй, дорогуша, и обязательно подпишись на наш телеграм-канал! 🩷\n\n"
+            "@thefeels_billiard\n\n"
+            "Жду 🫦"
+        )
+
+        await message.answer(
+            "Посмотреть, как пройти к нам:",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[[
+                    InlineKeyboardButton(
+                        text="Показать маршрут 🗺️",
+                        callback_data="how_to_find_us"
+                    )
+                ]]
+            )
         )
 
         await state.set_state(BookingStates.waiting_for_action)
@@ -613,5 +645,45 @@ async def process_block_unblock_day(
     await callback.message.edit_text(
         message,
         reply_markup=get_admin_menu_inline_keyboard()
+    )
+
+@booking_router.callback_query(lambda c: c.data == "how_to_find_us")
+async def handle_how_to_find_us(callback: CallbackQuery, state: FSMContext):
+    # First message with text
+    await callback.message.answer(
+        "The Feel's находится по адресу: ул. Пушкина, д. 7 🏠\n\n"
+        "Вход со стороны улицы Пушкина, между магазином 'Красное и Белое' "
+        "и кофейней 'Coffee Like' ☕️\n\n"
+        "Спускайся по лестнице вниз, и ты попадёшь в наше уютное место 🩷"
+    )
+    
+    # Send location photos (you'll need to prepare these media files)
+    photo1 = FSInputFile("assets/the_feels.jpeg")
+    photo2 = FSInputFile("assets/the_feels.jpeg")
+    
+    await callback.message.answer_photo(
+        photo=photo1,
+        caption="Вход в The Feel's 🚪"
+    )
+    
+    await callback.message.answer_photo(
+        photo=photo2,
+        caption="Вид здания с улицы 🏢"
+    )
+    
+    # Return to main menu
+    user_data = await state.get_data()
+    is_admin = user_data.get('is_admin', False)
+    
+    await callback.message.answer(
+        "Расскажи, как и что ты хочешь?",
+        reply_markup=get_admin_menu_inline_keyboard() if is_admin else get_main_menu_inline_keyboard()
+    )
+
+@booking_router.callback_query(lambda c: c.data == "contact_info")
+async def handle_contact_info(callback: CallbackQuery, state: FSMContext):
+    await callback.message.edit_text(
+        "Контактная информация будет здесь...",
+        reply_markup=get_main_menu_inline_keyboard()
     )
 
