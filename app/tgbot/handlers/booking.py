@@ -333,6 +333,7 @@ async def process_booking(
                 "Бронь успешно создана!",
                 reply_markup=get_admin_menu_inline_keyboard()
             )
+            await state.set_state(BookingStates.waiting_for_action)
         else:
         
             date_str, weekday_ru = format_date_with_weekday(booking_data['selected_date'])
