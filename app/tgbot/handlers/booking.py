@@ -4,8 +4,7 @@ from logging import getLogger
 from aiogram import Router
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message, CallbackQuery, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
-
+from aiogram.types import Message, CallbackQuery, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto
 from app.tgbot.handlers.admin import handle_admin_booking
 from app.tgbot.handlers.navigation import back_to_main
 from app.infrastructure.database.repositories.booking_repository import BookingRepository
@@ -329,13 +328,12 @@ async def process_booking(
             logger.warning("Failed to update Google Sheets")
 
         if is_admin:
+            await state.set_state(BookingStates.waiting_for_action)
             await message.answer(
                 "Бронь успешно создана!",
                 reply_markup=get_admin_menu_inline_keyboard()
             )
-            await state.set_state(BookingStates.waiting_for_action)
         else:
-        
             date_str, weekday_ru = format_date_with_weekday(booking_data['selected_date'])
             await message.answer(
                 f"Отлично, дорогуша!\n"
@@ -657,26 +655,74 @@ async def process_block_unblock_day(
 async def handle_how_to_find_us(callback: CallbackQuery, state: FSMContext):
     # First message with text
     await callback.message.answer(
-        "The Feel's находится по адресу: ул. Пушкина, д. 7 🏠\n\n"
-        "Вход со стороны улицы Пушкина, между магазином 'Красное и Белое' "
-        "и кофейней 'Coffee Like' ☕️\n\n"
-        "Спускайся по лестнице вниз, и ты попадёшь в наше уютное место 🩷"
+        "Мы находимся во дворах, по адресу:\n"
+        "*Пер. Гривцова д. 1/64В*\n\n"
+        "Чтобы добраться до нас, постройте *маршрут в*\n"
+        "*Яндекс.Навигаторе:*\n\n"
+        "https://yandex.ru/navi/org/the_feel_s/180396654131?si=qnwvqzyypn29a6h85pv6pzrr6m\n\n"
+        "*Проход* в наш двор *через арку*, именно с *переулка Гривцова*\n\n"
+        "Справа от ворот есть *домофон*, наберите на нём *код #2401*, или позвоните в наш звоночек, который под домофоном\n\n"
+        "Далее, *идите прямо в арку*, *до других сплошных ворот* с нашей вывеской, на ней тоже наш *звонок* (работает без звука) *нажимайте*, ждите зелёного сигнала и *открывайте дверь*\n\n"
+        "Далее идете прямо, уже не запутаетесь 😉",
+        parse_mode="Markdown"
     )
     
-    # Send location photos (you'll need to prepare these media files)
-    photo1 = FSInputFile("assets/the_feels.jpeg")
-    photo2 = FSInputFile("assets/the_feels.jpeg")
+    photo1 = FSInputFile("assets/feels1.jpg")
+    photo2 = FSInputFile("assets/feels2.jpg")
+    photo3 = FSInputFile("assets/feels3.jpg")
+    photo4 = FSInputFile("assets/feels4.jpg")
+    photo5 = FSInputFile("assets/feels5.jpg")
+    photo6 = FSInputFile("assets/feels6.jpg")
+    photo7 = FSInputFile("assets/feels7.jpg")
+    photo8 = FSInputFile("assets/feels8.jpg")
+    photo9 = FSInputFile("assets/feels9.jpg")
+
+    media = [
+        InputMediaPhoto(media=photo7),
+        InputMediaPhoto(media=photo8),
+        InputMediaPhoto(
+            media=photo9,
+            caption="После прохождения этого квеста, ждём вас в The Feel's 🩷"
+        )
+    ]
     
     await callback.message.answer_photo(
         photo=photo1,
-        caption="Вход в The Feel's 🚪"
+        caption="Вход в наш двор через арку, с переулка Гривцова ☝️"
     )
     
     await callback.message.answer_photo(
         photo=photo2,
-        caption="Вид здания с улицы 🏢"
+        caption="Справа от арки домофон, наберите код #2401\n"
+        "Или, позвоните в наш звоночек, который под домофоном"
     )
     
+    await callback.message.answer_photo(
+        photo=photo3,
+        caption="Двигайтесь прямо до упора, до вторых ворот с нашей вывеской 🫵"
+    )
+    await callback.message.answer_photo(
+        photo=photo4
+    )
+
+    await callback.message.answer_photo(
+        photo=photo5,
+        caption="Позвоните в наш звоночек (работает без звука), дождись\n"
+          "зелёного сигнала справа и открывайте дверь 🚪"
+    )
+    
+    await callback.message.answer_photo(
+        photo=photo6,
+        caption="Двигайтесь дальше, смело! 💪"
+    )
+
+
+    await callback.message.answer(
+        "А дальше, всё уже просто, не запутаетесь 😉"
+    )
+
+    await callback.message.answer_media_group(media)
+
     # Return to main menu
     user_data = await state.get_data()
     is_admin = user_data.get('is_admin', False)
@@ -688,8 +734,25 @@ async def handle_how_to_find_us(callback: CallbackQuery, state: FSMContext):
 
 @booking_router.callback_query(lambda c: c.data == "contact_info")
 async def handle_contact_info(callback: CallbackQuery, state: FSMContext):
-    await callback.message.edit_text(
-        "Контактная информация будет здесь...",
+    await callback.message.answer(
+        "Контактная информация:\n\n"
+        "Бильярдный клуб The Feel's\n"
+        "Мы вызываем чувства! 🩷\n\n"
+        "Адрес: *пер. Гривцова д. 1/64В*\n"
+        "(Находимся во дворе, стройте маршрут по Яндекс.Навигатору, вход  в арку с переулка Гривцова, справа от ворот наш звоночек)\n\n"
+        "*Для брони* используйте телеграм-бот:\n"
+        "[BilliardTheFeelsBot](https://t.me/BilliardTheFeelsBot)\n\n\n"
+        "По вопросам, не связанным с бронью, пишите, или звоните:\n"
+        "[@trueavanture](https://t.me/trueavanture) 💌\n\n"
+        "+7 (911) 990-19-93 ☎️\n\n"
+        "Наш ТГ канал: [@thefeels_billiard](https://t.me/thefeels_billiard)\n\n"
+        "Какая-то соц. сеть с фотками 📸 [@thefeels_billiard](https://t.me/thefeels_billiard)\n\n"
+        "Подпишись, Бро! 🫶",
+        parse_mode="Markdown"
+    )
+
+    await callback.message.answer(
+        "Расскажи, как и что ты хочешь?",
         reply_markup=get_main_menu_inline_keyboard()
     )
 

@@ -135,7 +135,7 @@ def get_admin_menu_inline_keyboard() -> InlineKeyboardMarkup:
         callback_data="unblock_day"
     )
     builder.button(
-        text="Управление бронями 👥",
+        text="Отмена брони 👥",
         callback_data="manage_bookings"
     )
     builder.adjust(1)  # По одной кнопке в ряд
