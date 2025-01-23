@@ -24,6 +24,9 @@ from app.tgbot.states.booking import BookingStates
 from app.tgbot.utils.booking import get_available_dates, get_available_times
 from app.tgbot.utils.date_helpers import format_date_with_weekday
 from config.config import settings
+from app.schemas.client import ClientCreate
+from pydantic import ValidationError
+
 booking_router = Router()
 logger = getLogger(__name__)
 
@@ -75,36 +78,52 @@ async def process_name(
     state: FSMContext,
     sheets_service: GoogleSheetsService
 ):
-    name = message.text.strip()
-    is_admin = name == settings.ADMIN_NAME
-    
-    await state.update_data(
-        client_name=name,
-        is_admin=is_admin
-    )
-    
-    if is_admin:
-        await message.answer(
-            f"Добро пожаловать, администратор! 👑\n\n"
-            "Вам доступны расширенные функции управления.",
-            reply_markup=get_admin_menu_inline_keyboard()
+    try:
+        # Создаем временный объект для валидации имени
+        client_data = ClientCreate(
+            name=message.text.strip(),
+            phone="+70000000000",  # Временное значение для валидации только имени
+            visit_date=None
         )
-        await state.set_state(BookingStates.waiting_for_action)
-        return
-
-    # Обычный процесс для не-админа
-    available_dates = await get_available_dates(sheets_service)
-    
-    if not available_dates:
-        await message.answer("Извини, дорогуша, но на ближайшие дни все занято!")
-        await state.clear()
-        return
         
-    await state.set_state(BookingStates.waiting_for_date)
-    await message.answer(
-        f"Приятно познакомиться, {name}!🫶\n\nВыбери день:",
-        reply_markup=get_dates_keyboard(available_dates)
-    )
+        is_admin = client_data.name == settings.ADMIN_NAME
+        
+        await state.update_data(
+            client_name=client_data.name,
+            is_admin=is_admin
+        )
+        
+        if is_admin:
+            await message.answer(
+                f"Добро пожаловать, мой господин! 👑\n\n"
+                "Вам доступны расширенные функции управления.",
+                reply_markup=get_admin_menu_inline_keyboard()
+            )
+            await state.set_state(BookingStates.waiting_for_action)
+            return
+
+        # Обычный процесс для не-админа
+        available_dates = await get_available_dates(sheets_service)
+        
+        if not available_dates:
+            await message.answer(
+                "Извини, дорогуша, но на ближайшие дни все занято!",
+                reply_markup=get_main_menu_inline_keyboard()
+            )
+            await state.clear()
+            return
+            
+        await state.set_state(BookingStates.waiting_for_date)
+        await message.answer(
+            f"Приятно познакомиться, {client_data.name}!🫶\n\nВыбери день:",
+            reply_markup=get_dates_keyboard(available_dates)
+        )
+        
+    except ValidationError as e:
+        error_msg = str(e.errors()[0]['msg']) if e.errors() else "Некорректное имя"
+        await message.answer(
+            f"Пожалуйста, введи корректное имя (только буквы русского или английского алфавита) 😊"
+        )
 
 @booking_router.callback_query(BookingStates.waiting_for_date)
 async def process_date(
@@ -132,7 +151,7 @@ async def process_date(
         await state.set_state(BookingStates.waiting_for_table_preference)
         await callback.message.edit_text(
             f"За каким столом предпочитаешь сделать это, {state_data['client_name']}? 😼\n\n"
-            f"(Цена удовольствия составляет всего 1200 руб./час)",
+            f"(Цена удовольствия составляет всего 1300 руб./час)",
             reply_markup=get_table_preference_keyboard()
         )
 
@@ -257,8 +276,24 @@ async def process_phone(
     booking_repository: BookingRepository,
     client_repository: ClientRepository
 ):
-    await state.update_data(client_phone=message.text)
-    await process_booking(message, state, sheets_service, booking_repository, client_repository)
+    try:
+        state_data = await state.get_data()
+        
+        # Создаем объект для валидации
+        client = ClientCreate(
+            name=state_data['client_name'],
+            phone=message.text.strip(),
+            visit_date=None
+        )
+        
+        await state.update_data(client_phone=client.phone)
+        await process_booking(message, state, sheets_service, booking_repository, client_repository)
+        
+    except ValidationError as e:
+        await message.answer(
+            "Пожалуйста, введи корректный номер телефона в формате:\n"
+            "+7XXXXXXXXXX или 8XXXXXXXXXX 📱"
+        )
 
 # Выносим логику создания бронирования в отдельную функцию
 async def process_booking(
@@ -359,6 +394,7 @@ async def process_booking(
             await message.answer(
                 "Хэй, дорогуша, и обязательно подпишись на наш телеграм-канал! 🩷\n\n"
                 "@thefeels_billiard\n\n"
+                "https://www.instagram.com/thefeels_billiard?igsh=MWw4dG8zZzc0cWx1cw==\n\n"
                 "Жду 🫦"
             )
 
@@ -667,6 +703,7 @@ async def handle_how_to_find_us(callback: CallbackQuery, state: FSMContext):
         parse_mode="Markdown"
     )
     
+    photo = FSInputFile("assets/feels.jpg")
     photo1 = FSInputFile("assets/feels1.jpg")
     photo2 = FSInputFile("assets/feels2.jpg")
     photo3 = FSInputFile("assets/feels3.jpg")
@@ -685,7 +722,11 @@ async def handle_how_to_find_us(callback: CallbackQuery, state: FSMContext):
             caption="После прохождения этого квеста, ждём вас в The Feel's 🩷"
         )
     ]
-    
+
+    await callback.message.answer_photo(
+        photo=photo
+    )
+
     await callback.message.answer_photo(
         photo=photo1,
         caption="Вход в наш двор через арку, с переулка Гривцова ☝️"
@@ -739,14 +780,14 @@ async def handle_contact_info(callback: CallbackQuery, state: FSMContext):
         "Бильярдный клуб The Feel's\n"
         "Мы вызываем чувства! 🩷\n\n"
         "Адрес: *пер. Гривцова д. 1/64В*\n"
-        "(Находимся во дворе, стройте маршрут по Яндекс.Навигатору, вход  в арку с переулка Гривцова, справа от ворот наш звоночек)\n\n"
+        "(Находимся во дворе, стройте маршрут по Яндекс.Навигатору, вход  в арку с переулка Гривцова, справа от ворот наш звоночек) Или *наберите код на домофоне #2401*\n\n"
         "*Для брони* используйте телеграм-бот:\n"
         "[BilliardTheFeelsBot](https://t.me/BilliardTheFeelsBot)\n\n\n"
         "По вопросам, не связанным с бронью, пишите, или звоните:\n"
         "[@trueavanture](https://t.me/trueavanture) 💌\n\n"
         "+7 (911) 990-19-93 ☎️\n\n"
         "Наш ТГ канал: [@thefeels_billiard](https://t.me/thefeels_billiard)\n\n"
-        "Какая-то соц. сеть с фотками 📸 [@thefeels_billiard](https://t.me/thefeels_billiard)\n\n"
+        "Какая-то соц. сеть с фотками 📸 [@thefeels_billiard](https://www.instagram.com/thefeels_billiard)\n\n"
         "Подпишись, Бро! 🫶",
         parse_mode="Markdown"
     )
